@@ -1,12 +1,22 @@
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue, ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import type { CreateSessionArgs, ListSessionsArgs, ListSessionsResult, SessionListOptions, SessionOrigin, SessionRow, SessionStatus } from './types.ts'
+import type {
+  CreateSessionArgs,
+  ListSessionsArgs,
+  ListSessionsResult,
+  SendSessionMessageArgs,
+  SendSessionMessageResult,
+  SessionListOptions,
+  SessionOrigin,
+  SessionRow,
+  SessionStatus,
+} from './types.ts'
 import { SessionMeshRuntime } from './runtime.ts'
 
 const statusValues = ['running', 'idle', 'stopped'] as const
 const originValues = ['user', 'subagent', 'unknown'] as const
 const archiveValues = ['exclude', 'include', 'only'] as const
 const sortKeyValues = ['createdAt', 'updatedAt', 'title', 'cwd', 'workspace'] as const
+const sendModeValues = ['queue', 'steer'] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -14,6 +24,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined
+  if (typeof value === 'string') return value
+  throw new Error(label)
+}
+
+function requiredString(value: unknown, label: string): string {
   if (typeof value === 'string') return value
   throw new Error(label)
 }
@@ -50,6 +65,17 @@ function optionalEnumArray<T extends string>(value: unknown, values: readonly T[
 export function parseSessionListOptions(value: unknown): SessionListOptions {
   if (value === undefined) return {}
   if (!isRecord(value)) throw new Error('list_sessions: sessions must be an object')
+  const query = optionalString(value.query, 'list_sessions: sessions.query must be a string')
+  const ids = optionalStringArray(value.ids, 'list_sessions: sessions.ids must be a string array')
+  const workspaceIds = optionalStringArray(value.workspaceIds, 'list_sessions: sessions.workspaceIds must be a string array')
+  const workspacePaths = optionalStringArray(value.workspacePaths, 'list_sessions: sessions.workspacePaths must be a string array')
+  const cwd = optionalString(value.cwd, 'list_sessions: sessions.cwd must be a string')
+  const title = optionalString(value.title, 'list_sessions: sessions.title must be a string')
+  const statuses = optionalEnumArray<SessionStatus>(value.statuses, statusValues, 'list_sessions: sessions.statuses is invalid')
+  const origins = optionalEnumArray<SessionOrigin>(value.origins, originValues, 'list_sessions: sessions.origins is invalid')
+  const includeSelf = optionalBoolean(value.includeSelf, 'list_sessions: sessions.includeSelf must be a boolean')
+  const limit = optionalNumber(value.limit, 'list_sessions: sessions.limit must be a finite number')
+  const offset = optionalNumber(value.offset, 'list_sessions: sessions.offset must be a finite number')
   const sortValue = value.sort
   let sort: SessionListOptions['sort']
   if (sortValue !== undefined) {
@@ -60,18 +86,18 @@ export function parseSessionListOptions(value: unknown): SessionListOptions {
     }
   }
   return {
-    ...(optionalString(value.query, 'list_sessions: sessions.query must be a string') === undefined ? {} : { query: optionalString(value.query, 'list_sessions: sessions.query must be a string') }),
-    ...(optionalStringArray(value.ids, 'list_sessions: sessions.ids must be a string array') === undefined ? {} : { ids: optionalStringArray(value.ids, 'list_sessions: sessions.ids must be a string array') }),
-    ...(optionalStringArray(value.workspaceIds, 'list_sessions: sessions.workspaceIds must be a string array') === undefined ? {} : { workspaceIds: optionalStringArray(value.workspaceIds, 'list_sessions: sessions.workspaceIds must be a string array') }),
-    ...(optionalStringArray(value.workspacePaths, 'list_sessions: sessions.workspacePaths must be a string array') === undefined ? {} : { workspacePaths: optionalStringArray(value.workspacePaths, 'list_sessions: sessions.workspacePaths must be a string array') }),
-    ...(optionalString(value.cwd, 'list_sessions: sessions.cwd must be a string') === undefined ? {} : { cwd: optionalString(value.cwd, 'list_sessions: sessions.cwd must be a string') }),
-    ...(optionalString(value.title, 'list_sessions: sessions.title must be a string') === undefined ? {} : { title: optionalString(value.title, 'list_sessions: sessions.title must be a string') }),
-    ...(optionalEnumArray<SessionStatus>(value.statuses, statusValues, 'list_sessions: sessions.statuses is invalid') === undefined ? {} : { statuses: optionalEnumArray<SessionStatus>(value.statuses, statusValues, 'list_sessions: sessions.statuses is invalid') }),
-    ...(optionalEnumArray<SessionOrigin>(value.origins, originValues, 'list_sessions: sessions.origins is invalid') === undefined ? {} : { origins: optionalEnumArray<SessionOrigin>(value.origins, originValues, 'list_sessions: sessions.origins is invalid') }),
+    ...(query === undefined ? {} : { query }),
+    ...(ids === undefined ? {} : { ids }),
+    ...(workspaceIds === undefined ? {} : { workspaceIds }),
+    ...(workspacePaths === undefined ? {} : { workspacePaths }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(title === undefined ? {} : { title }),
+    ...(statuses === undefined ? {} : { statuses }),
+    ...(origins === undefined ? {} : { origins }),
     ...(value.archived === undefined ? {} : { archived: enumValue(value.archived, archiveValues, 'list_sessions: sessions.archived must be exclude, include, or only') }),
-    ...(optionalBoolean(value.includeSelf, 'list_sessions: sessions.includeSelf must be a boolean') === undefined ? {} : { includeSelf: optionalBoolean(value.includeSelf, 'list_sessions: sessions.includeSelf must be a boolean') }),
-    ...(optionalNumber(value.limit, 'list_sessions: sessions.limit must be a finite number') === undefined ? {} : { limit: optionalNumber(value.limit, 'list_sessions: sessions.limit must be a finite number') }),
-    ...(optionalNumber(value.offset, 'list_sessions: sessions.offset must be a finite number') === undefined ? {} : { offset: optionalNumber(value.offset, 'list_sessions: sessions.offset must be a finite number') }),
+    ...(includeSelf === undefined ? {} : { includeSelf }),
+    ...(limit === undefined ? {} : { limit }),
+    ...(offset === undefined ? {} : { offset }),
     ...(sort === undefined ? {} : { sort }),
   }
 }
@@ -85,16 +111,39 @@ function parseListSessionsArgs(args: unknown): ListSessionsArgs {
 function parseCreateSessionArgs(args: unknown): CreateSessionArgs {
   if (args === undefined) return {}
   if (!isRecord(args)) throw new Error('create_session arguments must be an object')
+  const cwd = optionalString(args.cwd, 'create_session: cwd must be a string')
+  const workspaceId = optionalString(args.workspaceId, 'create_session: workspaceId must be a string')
+  const title = optionalString(args.title, 'create_session: title must be a string')
+  const agentPreset = optionalString(args.agentPreset, 'create_session: agentPreset must be a string')
   return {
-    ...(optionalString(args.cwd, 'create_session: cwd must be a string') === undefined ? {} : { cwd: optionalString(args.cwd, 'create_session: cwd must be a string') }),
-    ...(optionalString(args.workspaceId, 'create_session: workspaceId must be a string') === undefined ? {} : { workspaceId: optionalString(args.workspaceId, 'create_session: workspaceId must be a string') }),
-    ...(optionalString(args.title, 'create_session: title must be a string') === undefined ? {} : { title: optionalString(args.title, 'create_session: title must be a string') }),
-    ...(optionalString(args.agentPreset, 'create_session: agentPreset must be a string') === undefined ? {} : { agentPreset: optionalString(args.agentPreset, 'create_session: agentPreset must be a string') }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(title === undefined ? {} : { title }),
+    ...(agentPreset === undefined ? {} : { agentPreset }),
+  }
+}
+
+function parseSendSessionMessageArgs(args: unknown): SendSessionMessageArgs {
+  if (!isRecord(args)) throw new Error('send_session_message arguments must be an object')
+  const sessionId = requiredString(args.sessionId, 'send_session_message: sessionId must be a string')
+  const message = requiredString(args.message, 'send_session_message: message must be a string')
+  const summary = optionalString(args.summary, 'send_session_message: summary must be a string')
+  const mode = args.mode === undefined ? undefined : enumValue(args.mode, sendModeValues, 'send_session_message: mode must be queue or steer')
+  const expectReply = optionalBoolean(args.expectReply, 'send_session_message: expectReply must be a boolean')
+  const inReplyTo = optionalString(args.inReplyTo, 'send_session_message: inReplyTo must be a string')
+  return {
+    sessionId,
+    message,
+    ...(summary === undefined ? {} : { summary }),
+    ...(mode === undefined ? {} : { mode }),
+    ...(expectReply === undefined ? {} : { expectReply }),
+    ...(inReplyTo === undefined ? {} : { inReplyTo }),
   }
 }
 
 const statusSchemaValues = [...statusValues]
 const originSchemaValues = [...originValues]
+const sendModeSchemaValues = [...sendModeValues]
 
 const sessionRowSchema = {
   type: 'object' as const,
@@ -114,6 +163,20 @@ const sessionRowSchema = {
     self: { type: 'boolean' as const },
     createdAt: { type: 'number' as const },
     updatedAt: { type: 'number' as const },
+  },
+}
+
+const senderSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['sessionId'],
+  properties: {
+    sessionId: { type: 'string' as const },
+    title: { type: 'string' as const },
+    cwd: { type: 'string' as const },
+    workspaceId: { type: 'string' as const },
+    workspaceTitle: { type: 'string' as const },
+    agentPreset: { type: 'string' as const },
   },
 }
 
@@ -147,9 +210,9 @@ export function buildListSessionsTool(runtime: SessionMeshRuntime): ToolDefiniti
             workspacePaths: { type: 'array', items: { type: 'string' } },
             cwd: { type: 'string', description: 'Case-insensitive substring over session cwd.' },
             title: { type: 'string', description: 'Case-insensitive substring over latest title.' },
-            statuses: { type: 'array', items: { type: 'string', enum: statusValues } },
-            origins: { type: 'array', items: { type: 'string', enum: originValues } },
-            archived: { type: 'string', enum: archiveValues, description: 'Default is exclude.' },
+            statuses: { type: 'array', items: { type: 'string', enum: statusSchemaValues } },
+            origins: { type: 'array', items: { type: 'string', enum: originSchemaValues } },
+            archived: { type: 'string', enum: [...archiveValues], description: 'Default is exclude.' },
             includeSelf: { type: 'boolean', description: 'Default true.' },
             limit: { type: 'number', description: 'Default 20, maximum 100.' },
             offset: { type: 'number', description: 'Rows to skip after filtering and sorting.' },
@@ -157,7 +220,7 @@ export function buildListSessionsTool(runtime: SessionMeshRuntime): ToolDefiniti
               type: 'object',
               additionalProperties: false,
               properties: {
-                by: { type: 'string', enum: sortKeyValues },
+                by: { type: 'string', enum: [...sortKeyValues] },
                 order: { type: 'string', enum: ['asc', 'desc'] },
               },
             },
@@ -259,12 +322,51 @@ export function buildCreateSessionTool(runtime: SessionMeshRuntime): ToolDefinit
   }
 }
 
+export function buildSendSessionMessageTool(runtime: SessionMeshRuntime): ToolDefinition {
+  return {
+    name: 'send_session_message',
+    description: 'Send an agent relay message to an ordinary DSH sessionId. The relay envelope is generated by the plugin; this is not a human user instruction.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['sessionId', 'message'],
+      properties: {
+        sessionId: { type: 'string', description: 'Target ordinary DSH session id.' },
+        message: { type: 'string', description: 'Message body to send after the generated dsh-relay envelope.' },
+        summary: { type: 'string', description: 'Optional 5-10 word recap shown by the sender tool card.' },
+        mode: { type: 'string', enum: sendModeSchemaValues, description: 'queue appends after the current turn; steer interrupts a running target. Default queue.' },
+        expectReply: { type: 'boolean', description: 'Signals collaboration intent only; the tool does not wait for a reply.' },
+        inReplyTo: { type: 'string', description: 'Relay message id this message replies to.' },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['messageId', 'accepted', 'mode', 'to', 'from', 'deliveredVia'],
+        properties: {
+          messageId: { type: 'string' },
+          accepted: { type: 'boolean' },
+          mode: { type: 'string', enum: sendModeSchemaValues },
+          to: sessionRowSchema,
+          from: senderSchema,
+          deliveredVia: { type: 'string', enum: ['followup', 'steer', 'resume-followup', 'resume-steer'] },
+        },
+      },
+      render: (_args: unknown, value: JsonValue) => {
+        const result = value as unknown as SendSessionMessageResult
+        return [{ type: 'text', text: `${result.messageId} delivered via ${result.deliveredVia} to ${result.to.sessionId}` }]
+      },
+    },
+    async execute(rawArgs: unknown, exec: ToolRunContext) {
+      return runtime.sendSessionMessage(parseSendSessionMessageArgs(rawArgs), exec.agent, exec.signal)
+    },
+  }
+}
+
 export function registerSessionMeshTools(ctx: { tools: { register(definition: ToolDefinition): () => void } }, runtime: SessionMeshRuntime): void {
   ctx.tools.register(buildListSessionsTool(runtime))
   ctx.tools.register(buildGetCurrentSessionTool(runtime))
   ctx.tools.register(buildCreateSessionTool(runtime))
-}
-
-export function agentOf(exec: ToolRunContext): Agent | undefined {
-  return exec.agent
+  ctx.tools.register(buildSendSessionMessageTool(runtime))
 }

@@ -1,10 +1,25 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, AgentSetup } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
-import type { CreateSessionArgs, CreateSessionResult, ListSessionsResult, SessionListOptions, SessionOrigin, SessionRow, SessionStatus } from './types.ts'
+import { buildRelaySource, frameRelayMessage, mintRelayMessageId } from './message.ts'
+import type {
+  CreateSessionArgs,
+  CreateSessionResult,
+  DeliveredVia,
+  ListSessionsResult,
+  SendSessionMessageArgs,
+  SendSessionMessageResult,
+  SenderIdentity,
+  SessionListOptions,
+  SessionOrigin,
+  SessionRow,
+  SessionStatus,
+} from './types.ts'
+import { SessionMeshError } from './types.ts'
 
 interface SessionHeaderLike {
   id: string
@@ -57,6 +72,12 @@ interface AgentRegistryLike {
   create(options: {
     sessionId: string
     meta?: { cwd?: string; agentPreset?: string }
+    agentOptions?: AgentOptions
+    signal?: AbortSignal
+    setup?: AgentSetup
+  }): Promise<{ agent: Agent }>
+  resume(options: {
+    resumeSessionId: string
     agentOptions?: AgentOptions
     signal?: AbortSignal
     setup?: AgentSetup
@@ -119,9 +140,14 @@ async function requireDirectory(path: string): Promise<string> {
   return realpath(path)
 }
 
+function isSubagent(agent: Agent): boolean {
+  return (agent.session.header as { origin?: string }).origin === 'subagent'
+}
+
 export class SessionMeshRuntime {
   private readonly ctx: Context
   private readonly creations = new Map<string, Promise<{ agent: Agent }>>()
+  private readonly resumes = new Map<string, Promise<{ agent: Agent }>>()
 
   constructor(ctx: Context) {
     this.ctx = ctx
@@ -174,14 +200,13 @@ export class SessionMeshRuntime {
     }
     const sessionId = `session-${randomUUID()}`
     const composition = await this.composeAgent(args.agentPreset)
-    const creation = this.createOnce(sessionId, {
+    const { agent } = await this.createOnce(sessionId, {
       cwd,
       agentPreset: composition.agentPreset,
       agentOptions: this.defaultAgentOptions(caller),
       setup: composition.setup,
       signal,
     })
-    const { agent } = await creation
     if (workspace !== undefined) {
       if (workspace.attachSession === undefined) throw new Error('create_session: workspace does not support attachSession')
       await workspace.attachSession(sessionId)
@@ -193,12 +218,99 @@ export class SessionMeshRuntime {
     }
     return {
       sessionId,
-      status: statusForAgent(agent) === 'running' ? 'idle' : 'idle',
+      status: 'idle',
       created: true,
       cwd,
       ...(workspace === undefined ? {} : { workspaceId: workspace.id }),
       ...(title === undefined ? {} : { title }),
       ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
+    }
+  }
+
+  async sendSessionMessage(args: SendSessionMessageArgs, caller?: Agent, signal?: AbortSignal): Promise<SendSessionMessageResult> {
+    const senderAgent = caller ?? this.agentRegistry().currentInitiator()
+    if (senderAgent === undefined) throw new SessionMeshError('delivery-failed', 'send_session_message requires an agent-owned tool call')
+    if (String(senderAgent.id) === args.sessionId) {
+      throw new SessionMeshError('self-message', 'send_session_message refuses self-message delivery in Work stage')
+    }
+    const mode = args.mode ?? 'queue'
+    const target = await this.resolveTarget(args.sessionId, senderAgent, signal)
+    if (target.archived) throw new SessionMeshError('archived-session', `send_session_message refuses archived session ${args.sessionId}`)
+    if (target.origin !== 'user') {
+      throw new SessionMeshError('unsupported-origin', `send_session_message supports ordinary sessions only; ${args.sessionId} has origin ${target.origin}`)
+    }
+    const from = await this.senderIdentity(senderAgent, signal)
+    const { agent, resumed } = await this.agentForTarget(target, senderAgent, signal)
+    const messageId = mintRelayMessageId()
+    const sentAt = new Date().toISOString()
+    const source = buildRelaySource({
+      messageId,
+      from,
+      toSessionId: target.sessionId,
+      mode,
+      sentAt,
+      ...(args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo }),
+    })
+    const text = frameRelayMessage(source, args.message)
+    const message = createUserMessage({ content: [{ type: 'text', text }], source })
+    let deliveredVia: DeliveredVia
+    try {
+      if (mode === 'steer') {
+        agent.steer(message)
+        deliveredVia = resumed ? 'resume-steer' : 'steer'
+      } else {
+        agent.followup(message)
+        deliveredVia = resumed ? 'resume-followup' : 'followup'
+      }
+    } catch (error) {
+      throw new SessionMeshError('delivery-failed', `send_session_message delivery failed for ${target.sessionId}: ${String(error)}`)
+    }
+    return {
+      messageId,
+      accepted: true,
+      mode,
+      to: { ...target, status: statusForAgent(agent) },
+      from,
+      deliveredVia,
+    }
+  }
+
+  private async resolveTarget(sessionId: string, caller: Agent, signal?: AbortSignal): Promise<SessionRow> {
+    const result = await this.listSessions({ ids: [sessionId], archived: 'include', includeSelf: true, limit: 1 }, caller, signal)
+    const target = result.items[0]
+    if (target === undefined) throw new SessionMeshError('session-not-found', `send_session_message target not found: ${sessionId}`)
+    return target
+  }
+
+  private async senderIdentity(agent: Agent, signal?: AbortSignal): Promise<SenderIdentity> {
+    const row = await this.currentSession(agent, signal)
+    return {
+      sessionId: row.sessionId,
+      ...(row.title === undefined ? {} : { title: row.title }),
+      ...(row.cwd === undefined ? {} : { cwd: row.cwd }),
+      ...(row.workspaceId === undefined ? {} : { workspaceId: row.workspaceId }),
+      ...(row.workspaceTitle === undefined ? {} : { workspaceTitle: row.workspaceTitle }),
+      ...(row.agentPreset === undefined ? {} : { agentPreset: row.agentPreset }),
+    }
+  }
+
+  private async agentForTarget(target: SessionRow, caller: Agent, signal?: AbortSignal): Promise<{ agent: Agent; resumed: boolean }> {
+    const live = this.agentRegistry().get(target.sessionId)
+    if (live !== undefined) {
+      if (isSubagent(live)) {
+        throw new SessionMeshError('unsupported-origin', `send_session_message supports ordinary sessions only; ${target.sessionId} is a subagent`)
+      }
+      return { agent: live, resumed: false }
+    }
+    try {
+      const { agent } = await this.resumeOnce(target.sessionId, target.agentPreset, caller, signal)
+      if (isSubagent(agent)) {
+        throw new SessionMeshError('unsupported-origin', `send_session_message supports ordinary sessions only; ${target.sessionId} is a subagent`)
+      }
+      return { agent, resumed: true }
+    } catch (error) {
+      if (error instanceof SessionMeshError) throw error
+      throw new SessionMeshError('resume-failed', `send_session_message could not resume ${target.sessionId}: ${String(error)}`)
     }
   }
 
@@ -217,6 +329,23 @@ export class SessionMeshRuntime {
     return creation
   }
 
+  private resumeOnce(sessionId: string, agentPreset: string | undefined, caller: Agent, signal?: AbortSignal): Promise<{ agent: Agent }> {
+    let resume = this.resumes.get(sessionId)
+    if (resume === undefined) {
+      resume = (async () => {
+        const composition = await this.composeAgent(agentPreset)
+        return this.agentRegistry().resume({
+          resumeSessionId: SessionId(sessionId),
+          ...(this.defaultAgentOptions(caller) === undefined ? {} : { agentOptions: this.defaultAgentOptions(caller) }),
+          ...(composition.setup === undefined ? {} : { setup: composition.setup }),
+          ...(signal === undefined ? {} : { signal }),
+        })
+      })().finally(() => this.resumes.delete(sessionId))
+      this.resumes.set(sessionId, resume)
+    }
+    return resume
+  }
+
   private agentRegistry(): AgentRegistryLike {
     return this.ctx.agents as unknown as AgentRegistryLike
   }
@@ -233,7 +362,7 @@ export class SessionMeshRuntime {
   private async composeAgent(agentPreset?: string): Promise<{ agentPreset?: string; setup?: AgentSetup }> {
     const presets = serviceOf<AgentPresetsLike>(this.ctx, 'agentPresets')
     if (presets === undefined) {
-      if (agentPreset !== undefined) throw new Error('create_session agentPreset requires the Host agentPresets service')
+      if (agentPreset !== undefined) throw new Error('agentPreset requires the Host agentPresets service')
       return {}
     }
     const resolved = await presets.resolve(agentPreset)

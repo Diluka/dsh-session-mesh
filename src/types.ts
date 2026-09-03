@@ -2,6 +2,8 @@ export type SessionStatus = 'running' | 'idle' | 'stopped'
 export type SessionOrigin = 'user' | 'subagent' | 'unknown'
 export type SessionArchiveFilter = 'exclude' | 'include' | 'only'
 export type SessionSortKey = 'createdAt' | 'updatedAt' | 'title' | 'cwd' | 'workspace'
+export type SendSessionMode = 'queue' | 'steer'
+export type DeliveredVia = 'followup' | 'steer' | 'resume-followup' | 'resume-steer'
 
 export interface SessionSortOptions {
   by?: SessionSortKey
@@ -69,4 +71,68 @@ export interface CreateSessionResult {
   workspaceId?: string
   title?: string
   agentPreset?: string
+}
+
+export interface SenderIdentity {
+  sessionId: string
+  title?: string
+  cwd?: string
+  workspaceId?: string
+  workspaceTitle?: string
+  agentPreset?: string
+}
+
+export interface AgentRelaySource {
+  kind: 'agent-relay'
+  form: 'relay'
+  transport: 'session.prompt'
+  messageId: string
+  from: SenderIdentity
+  to: { sessionId: string }
+  mode: SendSessionMode
+  sentAt: string
+  inReplyTo?: string
+  threadId?: string
+}
+
+export interface SendSessionMessageArgs {
+  sessionId: string
+  message: string
+  summary?: string
+  mode?: SendSessionMode
+  expectReply?: boolean
+  inReplyTo?: string
+}
+
+export interface SendSessionMessageResult {
+  messageId: string
+  accepted: true
+  mode: SendSessionMode
+  to: SessionRow
+  from: SenderIdentity
+  deliveredVia: DeliveredVia
+}
+
+export type SendSessionMessageErrorCode =
+  | 'session-not-found'
+  | 'archived-session'
+  | 'self-message'
+  | 'resume-failed'
+  | 'delivery-failed'
+  | 'unsupported-origin'
+
+export class SessionMeshError extends Error {
+  readonly code: SendSessionMessageErrorCode
+
+  constructor(code: SendSessionMessageErrorCode, message: string) {
+    super(message)
+    this.name = 'SessionMeshError'
+    this.code = code
+  }
+}
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'agent-relay': AgentRelaySource
+  }
 }
