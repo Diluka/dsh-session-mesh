@@ -1,0 +1,5 @@
+# dsh-session-mesh bundle layer: mounts ordinary DSH session discovery,
+# creation, and sessionId-addressed agent relay messaging tools.
+- insert:
+    - id: session-mesh
+      name: 'dsh-session-mesh'
