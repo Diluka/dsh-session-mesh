@@ -40,6 +40,16 @@ interface SessionEventRecordLike {
   time: number
 }
 
+interface SessionEventLike {
+  type: string
+  data?: unknown
+}
+
+interface SessionLogSnapshotLike {
+  session: SessionHeaderLike
+  events: readonly SessionEventLike[]
+}
+
 interface SessionTitleObservationResultLike {
   status: 'fulfilled' | 'rejected'
   value?: { title?: { title?: string } }
@@ -47,6 +57,7 @@ interface SessionTitleObservationResultLike {
 
 interface SessionQueryLike {
   listSessions(signal?: AbortSignal): Promise<SessionRecordLike[]>
+  readSession?(sessionId: string): Promise<SessionLogSnapshotLike>
   readTitleSnapshots?(sessionIds: readonly string[], signal?: AbortSignal): Promise<SessionTitleObservationResultLike[]>
   listEvents?(sessionId: string): Promise<SessionEventRecordLike[]>
 }
@@ -123,6 +134,16 @@ function originFor(header: SessionHeaderLike): SessionOrigin {
   if (header.origin === 'subagent') return 'subagent'
   if (header.cwd !== undefined) return 'user'
   return 'unknown'
+}
+
+function resolveRecordedPreset(session: { header: SessionHeaderLike; events: readonly SessionEventLike[] }): string | undefined {
+  for (let index = session.events.length - 1; index >= 0; index -= 1) {
+    const event = session.events[index]
+    if (event?.type === 'agent-preset/selected' && typeof (event.data as { agentPreset?: unknown } | undefined)?.agentPreset === 'string') {
+      return (event.data as { agentPreset: string }).agentPreset
+    }
+  }
+  return session.header.agentPreset
 }
 
 function pageOf(options: SessionListOptions | undefined): { limit: number; offset: number } {
@@ -303,7 +324,8 @@ export class SessionMeshRuntime {
       return { agent: live, resumed: false }
     }
     try {
-      const { agent } = await this.resumeOnce(target.sessionId, target.agentPreset, caller, signal)
+      const agentPreset = await this.resolvedPresetForSession(target.sessionId, target.agentPreset)
+      const { agent } = await this.resumeOnce(target.sessionId, agentPreset, caller, signal)
       if (isSubagent(agent)) {
         throw new SessionMeshError('unsupported-origin', `send_session_message supports ordinary sessions only; ${target.sessionId} is a subagent`)
       }
@@ -311,6 +333,17 @@ export class SessionMeshRuntime {
     } catch (error) {
       if (error instanceof SessionMeshError) throw error
       throw new SessionMeshError('resume-failed', `send_session_message could not resume ${target.sessionId}: ${String(error)}`)
+    }
+  }
+
+  private async resolvedPresetForSession(sessionId: string, fallback: string | undefined): Promise<string | undefined> {
+    const query = serviceOf<SessionQueryLike>(this.ctx, 'sessionQuery')
+    if (query?.readSession === undefined) return fallback
+    try {
+      const snapshot = await query.readSession(sessionId)
+      return resolveRecordedPreset({ header: snapshot.session, events: snapshot.events })
+    } catch {
+      return fallback
     }
   }
 
@@ -334,9 +367,10 @@ export class SessionMeshRuntime {
     if (resume === undefined) {
       resume = (async () => {
         const composition = await this.composeAgent(agentPreset)
+        const agentOptions = this.defaultAgentOptions(caller)
         return this.agentRegistry().resume({
           resumeSessionId: SessionId(sessionId),
-          ...(this.defaultAgentOptions(caller) === undefined ? {} : { agentOptions: this.defaultAgentOptions(caller) }),
+          ...(agentOptions === undefined ? {} : { agentOptions }),
           ...(composition.setup === undefined ? {} : { setup: composition.setup }),
           ...(signal === undefined ? {} : { signal }),
         })
@@ -392,7 +426,9 @@ export class SessionMeshRuntime {
     const workspace = workspaces.bySession.get(sessionId)
     const preset = liveAgent === undefined
       ? record.header.agentPreset
-      : serviceOf<AgentPresetsLike>(this.ctx, 'agentPresets')?.composedPreset?.(liveAgent.ctx) ?? record.header.agentPreset
+      : resolveRecordedPreset({ header: liveAgent.session.header, events: liveAgent.session.events as readonly SessionEventLike[] })
+        ?? serviceOf<AgentPresetsLike>(this.ctx, 'agentPresets')?.composedPreset?.(liveAgent.ctx)
+        ?? record.header.agentPreset
     return {
       sessionId,
       status: liveAgent === undefined ? 'stopped' : statusForAgent(liveAgent),
