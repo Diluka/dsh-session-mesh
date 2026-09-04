@@ -33,7 +33,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test"
+    "test": "node --test",
+    "test:e2e:no-key": "node scripts/e2e-no-key.mjs"
   },
   "dsh": {
     "bundle": {

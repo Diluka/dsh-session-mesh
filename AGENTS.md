@@ -17,6 +17,9 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 - Install dependencies: `pnpm install`
 - Verify JSDoc/checkJs types: `pnpm typecheck`
 - Run tests: `pnpm test`
+- Run no-key DSH install E2E: `pnpm test:e2e:no-key`
+
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step.
 
 `lib/` is the shipped JavaScript source. TypeScript only validates JS/JSDoc with `noEmit`; do not add a compile/build step.
 
@@ -46,6 +49,7 @@ Run the full local suite before committing:
 ```bash
 pnpm typecheck
 pnpm test
+pnpm test:e2e:no-key
 ```
 
 Add or update tests when changing parser behavior, output JSON contracts, session filtering, creation semantics, resume behavior, delivery mode selection, or relay envelope/source shape.

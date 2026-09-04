@@ -37,7 +37,10 @@ Run checks:
 ```bash
 pnpm typecheck
 pnpm test
+pnpm test:e2e:no-key
 ```
+
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; the GitHub Actions workflow installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step.
 
 The plugin ships source directly from `lib/*.js`. TypeScript is used only for `checkJs`/JSDoc validation with `noEmit`; there is no build step or generated `lib/` output.
 

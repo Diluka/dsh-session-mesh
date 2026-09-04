@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 24
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check lib/index.js
+          node --check lib/message.js
+          node --check lib/runtime.js
+          node --check lib/tools.js
+          node --check lib/types.js
+          node --check scripts/e2e-no-key.mjs
+          node --check test/message.test.js
+          node --check test/runtime.test.js
+
+      - name: Typecheck JSDoc
+        run: pnpm typecheck
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Pack package
+        run: pnpm pack --pack-destination tmp/pack
+
+      - name: Install DSH CLI for no-key E2E
+        run: npm install --global @deepseek-ai/dsh@0.1.2-rc.1
+
+      - name: Run no-key DSH install E2E
+        run: pnpm test:e2e:no-key
