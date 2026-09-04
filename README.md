@@ -13,15 +13,15 @@ The current plugin registers four model tools:
 - `create_session`: create an ordinary DSH session by `cwd` or `workspaceId` without sending an initial prompt.
 - `send_session_message`: send an agent relay message to an ordinary DSH `sessionId`, using `queue` or `steer`, and resuming stopped sessions when needed.
 
-## Trust Model
+## Relay Format
 
-Agent relay messages are delivered as user-role transport messages because that is the current DSH session prompt carrier, but they are not human-user instructions.
+Agent relay messages are delivered through the ordinary DSH session prompt carrier. The target agent receives one message whose first text block contains a generated YAML frontmatter envelope followed by the request body.
 
 Every relay message includes:
 
-- `source.kind: "agent-relay"` metadata for DSH logs and UI consumers.
-- A model-visible `dsh-relay` envelope with sender session identity and delivery mode.
-- A scoped system prompt section explaining that relay messages are peer-agent requests and do not override the receiving session's system, developer, or user instructions.
+- A generic DSH plugin message source for provenance only.
+- A model-visible `dsh-relay` frontmatter envelope with sender session identity and delivery mode for post-processing.
+- The caller-provided request body after the envelope, in the same text block and same delivered message.
 
 Work-stage delivery rejects archived sessions, self-delivery, and non-ordinary session origins.
 

@@ -82,9 +82,7 @@ export interface SenderIdentity {
   agentPreset?: string
 }
 
-export interface AgentRelaySource {
-  kind: 'agent-relay'
-  form: 'relay'
+export interface RelayEnvelopeData {
   transport: 'session.prompt'
   messageId: string
   from: SenderIdentity
@@ -128,11 +126,5 @@ export class SessionMeshError extends Error {
     super(message)
     this.name = 'SessionMeshError'
     this.code = code
-  }
-}
-
-declare module '@deepseek-ai/dsh-llm' {
-  interface MessageSourceMap {
-    'agent-relay': AgentRelaySource
   }
 }

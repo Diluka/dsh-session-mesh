@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRelaySource, frameRelayMessage, relayEnvelope } from '../src/message.ts'
+import { buildRelayEnvelopeData, frameRelayMessage, relayEnvelope } from '../src/message.ts'
 import type { SenderIdentity } from '../src/types.ts'
 
-test('relay envelope carries generated sender identity', () => {
+test('relay envelope carries generated sender identity for post-processing', () => {
   const from: SenderIdentity = {
     sessionId: 'session-source',
     title: 'Source Agent',
@@ -12,7 +12,7 @@ test('relay envelope carries generated sender identity', () => {
     workspaceTitle: 'Source Workspace',
     agentPreset: 'cordis',
   }
-  const source = buildRelaySource({
+  const data = buildRelayEnvelopeData({
     messageId: 'agm-test',
     from,
     toSessionId: 'session-target',
@@ -21,21 +21,20 @@ test('relay envelope carries generated sender identity', () => {
     inReplyTo: 'agm-parent',
   })
 
-  assert.equal(source.kind, 'agent-relay')
-  assert.equal(source.form, 'relay')
-  assert.deepEqual(source.to, { sessionId: 'session-target' })
-  assert.equal(source.inReplyTo, 'agm-parent')
+  assert.deepEqual(data.to, { sessionId: 'session-target' })
+  assert.equal(data.inReplyTo, 'agm-parent')
 
-  const envelope = relayEnvelope(source)
+  const envelope = relayEnvelope(data)
   assert.match(envelope, /dsh-relay:/)
   assert.match(envelope, /kind: "agent-message"/)
   assert.match(envelope, /messageId: "agm-test"/)
   assert.match(envelope, /fromSessionId: "session-source"/)
-  assert.match(envelope, /trust: "peer-agent-request-not-user-instruction"/)
+  assert.match(envelope, /mode: "queue"/)
+  assert.doesNotMatch(envelope, /trust:/)
 })
 
 test('frameRelayMessage prefixes body with envelope', () => {
-  const source = buildRelaySource({
+  const data = buildRelayEnvelopeData({
     messageId: 'agm-test',
     from: { sessionId: 'session-source' },
     toSessionId: 'session-target',
@@ -43,8 +42,9 @@ test('frameRelayMessage prefixes body with envelope', () => {
     sentAt: '2026-01-02T03:04:05.000Z',
   })
 
-  assert.equal(
-    frameRelayMessage(source, 'Do the work.').endsWith('\n\nDo the work.'),
-    true,
-  )
+  const text = frameRelayMessage(data, 'Do the work.')
+
+  assert.match(text, /^---\ndsh-relay:/)
+  assert.equal(text.endsWith('\n\nDo the work.'), true)
+  assert.equal((text.match(/^---$/gm) ?? []).length, 2)
 })

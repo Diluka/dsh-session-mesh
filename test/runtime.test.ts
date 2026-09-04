@@ -172,18 +172,21 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
   const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'Please inspect this.', mode: 'queue' }, source as never)
   const target = liveAgents.get('session-target')
   const delivered = target?.delivered[0]
-  const message = delivered?.message as { content: Array<{ text: string }>; source: { kind: string; messageId: string; from: { sessionId: string } } }
+  const message = delivered?.message as { content: Array<{ text: string }>; source: Record<string, unknown> }
+  const text = message.content[0]?.text ?? ''
 
   assert.equal(result.accepted, true)
   assert.equal(result.deliveredVia, 'resume-followup')
   assert.deepEqual(mountedPresets, ['mesh-preset'])
   assert.equal(delivered?.kind, 'followup')
-  assert.equal(message.source.kind, 'agent-relay')
-  assert.equal(message.source.messageId, result.messageId)
-  assert.equal(message.source.from.sessionId, 'session-source')
-  assert.match(message.content[0]?.text ?? '', /dsh-relay:/)
-  assert.match(message.content[0]?.text ?? '', /fromSessionId: "session-source"/)
-  assert.match(message.content[0]?.text ?? '', /Please inspect this\./)
+  assert.equal(target?.delivered.length, 1)
+  assert.equal(message.content.length, 1)
+  assert.deepEqual(message.source, { kind: 'plugin', plugin: 'dsh-session-mesh' })
+  assert.match(text, /^---\ndsh-relay:/)
+  assert.match(text, new RegExp(`messageId: "${result.messageId}"`))
+  assert.match(text, /fromSessionId: "session-source"/)
+  assert.match(text, /Please inspect this\./)
+  assert.doesNotMatch(text, /trust:/)
 })
 
 test('sendSessionMessage rejects self delivery', async () => {

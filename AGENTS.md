@@ -9,7 +9,7 @@ The Work line is the current implemented scope:
 - List durable sessions with ordinary JSON rows.
 - Return the current caller session identity.
 - Create ordinary DSH sessions without sending a prompt.
-- Send peer-agent relay messages to ordinary `sessionId` targets with generated provenance and anti-impersonation framing.
+- Send peer-agent relay messages to ordinary `sessionId` targets with generated provenance frontmatter.
 
 Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement Better-line items unless the task explicitly asks for them.
 
@@ -24,11 +24,11 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 
 ## Source Layout
 
-- `src/index.ts`: Cordis plugin entry, system prompt section, tool registration.
+- `src/index.ts`: Cordis plugin entry and tool registration.
 - `src/runtime.ts`: Host service integration for sessions, agents, workspaces, creation, resume, and delivery.
 - `src/tools.ts`: model tool schemas, argument parsing, output rendering.
-- `src/message.ts`: relay source metadata and model-visible `dsh-relay` envelope generation.
-- `src/types.ts`: JSON contracts and DSH message source augmentation.
+- `src/message.ts`: model-visible `dsh-relay` envelope generation.
+- `src/types.ts`: JSON contracts for tools and relay envelope data.
 - `test/*.test.ts`: Node test runner coverage for message framing and fake Host runtime flows.
 
 ## Runtime Boundaries

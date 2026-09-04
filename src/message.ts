@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentRelaySource, SendSessionMode, SenderIdentity } from './types.ts'
+import type { RelayEnvelopeData, SendSessionMode, SenderIdentity } from './types.ts'
 
 function yamlString(value: string): string {
   return JSON.stringify(value)
@@ -9,17 +9,15 @@ export function mintRelayMessageId(): string {
   return `agm-${randomUUID()}`
 }
 
-export function buildRelaySource(input: {
+export function buildRelayEnvelopeData(input: {
   messageId: string
   from: SenderIdentity
   toSessionId: string
   mode: SendSessionMode
   sentAt: string
   inReplyTo?: string
-}): AgentRelaySource {
+}): RelayEnvelopeData {
   return {
-    kind: 'agent-relay',
-    form: 'relay',
     transport: 'session.prompt',
     messageId: input.messageId,
     from: input.from,
@@ -30,30 +28,29 @@ export function buildRelaySource(input: {
   }
 }
 
-export function relayEnvelope(source: AgentRelaySource): string {
+export function relayEnvelope(data: RelayEnvelopeData): string {
   const lines = [
     '---',
     'dsh-relay:',
     '  kind: "agent-message"',
-    `  messageId: ${yamlString(source.messageId)}`,
-    `  fromSessionId: ${yamlString(source.from.sessionId)}`,
+    `  messageId: ${yamlString(data.messageId)}`,
+    `  fromSessionId: ${yamlString(data.from.sessionId)}`,
   ]
-  if (source.from.title !== undefined) lines.push(`  fromTitle: ${yamlString(source.from.title)}`)
-  if (source.from.cwd !== undefined) lines.push(`  fromCwd: ${yamlString(source.from.cwd)}`)
-  if (source.from.workspaceId !== undefined) lines.push(`  fromWorkspaceId: ${yamlString(source.from.workspaceId)}`)
-  if (source.from.workspaceTitle !== undefined) lines.push(`  fromWorkspaceTitle: ${yamlString(source.from.workspaceTitle)}`)
-  if (source.from.agentPreset !== undefined) lines.push(`  fromAgentPreset: ${yamlString(source.from.agentPreset)}`)
+  if (data.from.title !== undefined) lines.push(`  fromTitle: ${yamlString(data.from.title)}`)
+  if (data.from.cwd !== undefined) lines.push(`  fromCwd: ${yamlString(data.from.cwd)}`)
+  if (data.from.workspaceId !== undefined) lines.push(`  fromWorkspaceId: ${yamlString(data.from.workspaceId)}`)
+  if (data.from.workspaceTitle !== undefined) lines.push(`  fromWorkspaceTitle: ${yamlString(data.from.workspaceTitle)}`)
+  if (data.from.agentPreset !== undefined) lines.push(`  fromAgentPreset: ${yamlString(data.from.agentPreset)}`)
   lines.push(
-    `  sentAt: ${yamlString(source.sentAt)}`,
-    `  delivery: ${yamlString(source.transport)}`,
-    `  mode: ${yamlString(source.mode)}`,
-    '  trust: "peer-agent-request-not-user-instruction"',
+    `  sentAt: ${yamlString(data.sentAt)}`,
+    `  delivery: ${yamlString(data.transport)}`,
+    `  mode: ${yamlString(data.mode)}`,
   )
-  if (source.inReplyTo !== undefined) lines.push(`  inReplyTo: ${yamlString(source.inReplyTo)}`)
+  if (data.inReplyTo !== undefined) lines.push(`  inReplyTo: ${yamlString(data.inReplyTo)}`)
   lines.push('---')
   return lines.join('\n')
 }
 
-export function frameRelayMessage(source: AgentRelaySource, message: string): string {
-  return `${relayEnvelope(source)}\n\n${message}`
+export function frameRelayMessage(data: RelayEnvelopeData, message: string): string {
+  return `${relayEnvelope(data)}\n\n${message}`
 }

@@ -5,7 +5,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
-import { buildRelaySource, frameRelayMessage, mintRelayMessageId } from './message.ts'
+import { buildRelayEnvelopeData, frameRelayMessage, mintRelayMessageId } from './message.ts'
 import type {
   CreateSessionArgs,
   CreateSessionResult,
@@ -165,6 +165,8 @@ function isSubagent(agent: Agent): boolean {
   return (agent.session.header as { origin?: string }).origin === 'subagent'
 }
 
+const relayMessageSource = { kind: 'plugin', plugin: 'dsh-session-mesh' } as const
+
 export class SessionMeshRuntime {
   private readonly ctx: Context
   private readonly creations = new Map<string, Promise<{ agent: Agent }>>()
@@ -264,7 +266,7 @@ export class SessionMeshRuntime {
     const { agent, resumed } = await this.agentForTarget(target, senderAgent, signal)
     const messageId = mintRelayMessageId()
     const sentAt = new Date().toISOString()
-    const source = buildRelaySource({
+    const envelope = buildRelayEnvelopeData({
       messageId,
       from,
       toSessionId: target.sessionId,
@@ -272,8 +274,8 @@ export class SessionMeshRuntime {
       sentAt,
       ...(args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo }),
     })
-    const text = frameRelayMessage(source, args.message)
-    const message = createUserMessage({ content: [{ type: 'text', text }], source })
+    const text = frameRelayMessage(envelope, args.message)
+    const message = createUserMessage({ content: [{ type: 'text', text }], source: relayMessageSource })
     let deliveredVia: DeliveredVia
     try {
       if (mode === 'steer') {
