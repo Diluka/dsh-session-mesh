@@ -76,7 +76,7 @@ type SessionRow = {
 - `origin` 描述会话来源，用于区分普通会话、subagent 会话和未知来源。
 - `archived` 来自 DSH workspace/archive 状态。
 - `self` 标记当前工具调用者所在 session。
-- `updatedAt` 优先来自 session event 或投影；取不到时可回退到 `createdAt`。
+- `updatedAt` 只有在轻量元数据来源能提供时才返回；不能为了列表默认展示去读取完整事件日志，排序取不到时回退到 `createdAt`。
 
 ### Sender identity
 
@@ -194,34 +194,15 @@ type ListSessionsResult = {
 - 能按 `sessionId`、`cwd`、`status`、`archived` 过滤。
 - 不返回 DSH 内部 live object。
 
-### W2：`get_current_session`
+### W2：当前 session 身份处理
 
-只读返回当前工具调用者所在 session 的身份。这个工具不是必须，但它能降低人工复制 `sessionId` 的摩擦，适合作为 Work 阶段的小工具。
+公开 `get_current_session` 工具已从 Work 阶段移除。它的价值只是降低人工复制 `sessionId` 的摩擦，但会增加模型无谓调用面；如果实现走全局 session 查询，还可能在大量历史会话下触发过重的标题或事件日志读取。
 
-参数：
+Work 阶段保留的规则：
 
-```ts
-type GetCurrentSessionArgs = {}
-```
-
-返回：
-
-```ts
-type GetCurrentSessionResult = {
-  session: SessionRow
-}
-```
-
-行为：
-
-- 只读。
-- 返回当前 `sessionId`、title、cwd、workspace、agentPreset。
-- 可用于让其它会话知道应该回复给谁。
-
-验收：
-
-- 当前会话能拿到自己的 `sessionId`。
-- 返回字段与 `list_sessions({ ids: [self] })` 一致。
+- `send_session_message` 的发送者身份必须由插件从当前 `ToolRunContext.agent` 内部派生。
+- 发送者身份写入 relay frontmatter，供目标会话回复或后处理。
+- 需要人工找当前会话时，用 `list_sessions` 的普通列表/过滤能力，不提供单独公开工具。
 
 ### W3：`create_session`
 
@@ -732,9 +713,8 @@ Work 阶段工具：
 | Tool | 阶段 | 副作用 | 用途 |
 | --- | --- | --- | --- |
 | `list_sessions` | W1 | 只读 | 找到可寻址普通 DSH sessions |
-| `get_current_session` | W2 | 只读 | 获取当前 session identity，方便别人回复 |
 | `create_session` | W3 | 创建普通会话 | 创建可寻址 worker/session |
-| `send_session_message` | W4 | 唤醒、排队或打断目标 | 给 sessionId 投递代理消息 |
+| `send_session_message` | W4 | 唤醒、排队或打断目标 | 给 sessionId 投递代理消息；发送者身份由插件内部派生 |
 
 Better 阶段工具：
 
@@ -837,7 +817,7 @@ session ref 是只读上下文引用。`dsh-session-mesh` 是可写通信和创�
 
 1. W0：插件骨架与 Host 能力确认。
 2. W1：`list_sessions`。
-3. W2：`get_current_session`。
+3. W2：当前 session 身份由发送工具内部派生，不暴露独立 tool。
 4. W3：`create_session`。
 5. W4：`send_session_message`。
 6. W5：agent relay envelope 与系统提示词。

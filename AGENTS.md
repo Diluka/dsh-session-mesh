@@ -7,9 +7,8 @@
 The Work line is the current implemented scope:
 
 - List durable sessions with ordinary JSON rows.
-- Return the current caller session identity.
 - Create ordinary DSH sessions without sending a prompt.
-- Send peer-agent relay messages to ordinary `sessionId` targets with generated provenance frontmatter.
+- Send peer-agent relay messages to ordinary `sessionId` targets with generated provenance frontmatter; sender identity is derived internally from the caller.
 
 Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement Better-line items unless the task explicitly asks for them.
 

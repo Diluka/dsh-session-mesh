@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SessionMeshRuntime } from '../lib/runtime.js'
+import { registerSessionMeshTools } from '../lib/tools.js'
 import { SessionMeshError } from '../lib/types.js'
 
 function makeAgent(id, cwd, status = 'idle', agentPreset = 'cordis') {
@@ -42,25 +43,8 @@ function makeRuntime(records, liveAgents, extras = {}) {
         persisted: true,
       }))
     },
-    async readSession(sessionId) {
-      const record = records.find((entry) => entry.id === sessionId)
-      if (record === undefined) throw new Error('missing session')
-      return {
-        session: {
-          id: record.id,
-          createdAt: record.createdAt,
-          ...(record.cwd === undefined ? {} : { cwd: record.cwd }),
-          ...(record.origin === undefined ? {} : { origin: record.origin }),
-          ...(record.agentPreset === undefined ? {} : { agentPreset: record.agentPreset }),
-        },
-        events: record.events ?? [],
-      }
-    },
     async readTitleSnapshots(sessionIds) {
       return sessionIds.map((sessionId) => ({ status: 'fulfilled', value: { title: { title: `title:${sessionId}` } } }))
-    },
-    async listEvents(sessionId) {
-      return [{ time: sessionId === 'session-target' ? 500 : 300 }]
     },
   }
   const agents = {
@@ -101,6 +85,13 @@ function makeRuntime(records, liveAgents, extras = {}) {
   return new SessionMeshRuntime(ctx)
 }
 
+test('registerSessionMeshTools exposes only durable mesh tools', () => {
+  const names = []
+  registerSessionMeshTools({ tools: { register: (definition) => names.push(definition.name) } }, {})
+
+  assert.deepEqual(names, ['list_sessions', 'create_session', 'send_session_message'])
+})
+
 test('listSessions returns ordinary JSON rows with filters', async () => {
   const source = makeAgent('session-source', '/tmp/source')
   const liveAgents = new Map([[source.id, source]])
@@ -122,6 +113,29 @@ test('listSessions returns ordinary JSON rows with filters', async () => {
   assert.equal(result.items.find((row) => row.sessionId === 'session-source')?.self, true)
   assert.equal(result.items.find((row) => row.sessionId === 'session-archived')?.archived, true)
   assert.equal(result.items.find((row) => row.sessionId === 'session-target')?.workspaceId, 'workspace-1')
+})
+
+test('listSessions folds titles only for the returned page by default', async () => {
+  const titleReads = []
+  const runtime = makeRuntime([], new Map(), {
+    sessionQuery: {
+      async listSessions() {
+        return [
+          { header: { id: 'session-new', createdAt: 300, cwd: '/tmp/new' }, live: false, persisted: true },
+          { header: { id: 'session-old', createdAt: 100, cwd: '/tmp/old' }, live: false, persisted: true },
+        ]
+      },
+      async readTitleSnapshots(sessionIds) {
+        titleReads.push([...sessionIds])
+        return sessionIds.map((sessionId) => ({ status: 'fulfilled', value: { title: { title: `title:${sessionId}` } } }))
+      },
+    },
+  })
+
+  const result = await runtime.listSessions({ limit: 1, sort: { by: 'createdAt', order: 'desc' } })
+
+  assert.deepEqual(result.items.map((row) => row.sessionId), ['session-new'])
+  assert.deepEqual(titleReads, [['session-new']])
 })
 
 test('createSession creates an idle ordinary session without prompt delivery', async () => {
@@ -155,7 +169,6 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
       cwd: '/tmp/target',
       createdAt: 200,
       agentPreset: 'old-preset',
-      events: [{ type: 'agent-preset/selected', data: { agentPreset: 'mesh-preset' } }],
     },
   ], liveAgents, {
     agentPresets: {
@@ -165,6 +178,20 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
         return { id: id ?? 'cordis' }
       },
       composedPreset: () => 'cordis',
+    },
+    sessionQuery: {
+      async listSessions() {
+        return [
+          { header: { id: 'session-source', createdAt: 100, cwd: '/tmp/source' }, live: true, persisted: true },
+          { header: { id: 'session-target', createdAt: 200, cwd: '/tmp/target', agentPreset: 'old-preset' }, live: false, persisted: true },
+        ]
+      },
+      async readSession() {
+        throw new Error('sendSessionMessage must not read complete session logs for metadata')
+      },
+      async readTitleSnapshots() {
+        throw new Error('sendSessionMessage must not fold title logs for metadata')
+      },
     },
   })
 
@@ -176,7 +203,7 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
 
   assert.equal(result.accepted, true)
   assert.equal(result.deliveredVia, 'resume-followup')
-  assert.deepEqual(mountedPresets, ['mesh-preset'])
+  assert.deepEqual(mountedPresets, ['old-preset'])
   assert.equal(delivered?.kind, 'followup')
   assert.equal(target?.delivered.length, 1)
   assert.equal(message.content.length, 1)

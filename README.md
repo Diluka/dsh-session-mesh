@@ -6,12 +6,11 @@ It is intentionally separate from `dsh-crosstalk`: crosstalk handles live peer p
 
 ## Implemented Work Line
 
-The current plugin registers four model tools:
+The current plugin registers three model tools:
 
 - `list_sessions`: list durable DSH sessions visible to the current Host, with filters for ids, cwd, title, workspace, status, origin, archive state, pagination, and sorting.
-- `get_current_session`: return the caller's current DSH session identity as ordinary JSON.
 - `create_session`: create an ordinary DSH session by `cwd` or `workspaceId` without sending an initial prompt.
-- `send_session_message`: send an agent relay message to an ordinary DSH `sessionId`, using `queue` or `steer`, and resuming stopped sessions when needed.
+- `send_session_message`: send an agent relay message to an ordinary DSH `sessionId`, using `queue` or `steer`, and resuming stopped sessions when needed. Sender identity is derived internally from the calling agent.
 
 ## Relay Format
 

@@ -73,10 +73,6 @@ declare global {
     nextOffset?: number
   }
 
-  interface GetCurrentSessionResult {
-    session: SessionRow
-  }
-
   interface CreateSessionArgs {
     cwd?: string
     workspaceId?: string
@@ -147,20 +143,6 @@ declare global {
     persisted: boolean
   }
 
-  interface SessionEventRecordLike {
-    time: number
-  }
-
-  interface SessionEventLike {
-    type: string
-    data?: unknown
-  }
-
-  interface SessionLogSnapshotLike {
-    session: SessionHeaderLike
-    events: readonly SessionEventLike[]
-  }
-
   interface SessionTitleObservationResultLike {
     status: 'fulfilled' | 'rejected'
     value?: { title?: { title?: string } }
@@ -168,9 +150,7 @@ declare global {
 
   interface SessionQueryLike {
     listSessions(signal?: AbortSignal): Promise<SessionRecordLike[]>
-    readSession?(sessionId: string): Promise<SessionLogSnapshotLike>
     readTitleSnapshots?(sessionIds: readonly string[], signal?: AbortSignal): Promise<SessionTitleObservationResultLike[]>
-    listEvents?(sessionId: string): Promise<SessionEventRecordLike[]>
   }
 
   interface WorkspaceLike {
