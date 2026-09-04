@@ -46,6 +46,7 @@ jobs:
           node --check lib/tools.js
           node --check lib/types.js
           node --check scripts/e2e-no-key.mjs
+          node --check scripts/fixtures/e2e-no-key-probe.mjs
           node --check test/message.test.js
           node --check test/runtime.test.js
 
