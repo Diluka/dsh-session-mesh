@@ -428,8 +428,7 @@ export class SessionMeshRuntime {
     const workspace = workspaces.bySession.get(sessionId)
     const preset = liveAgent === undefined
       ? record.header.agentPreset
-      : resolveRecordedPreset({ header: liveAgent.session.header, events: liveAgent.session.events as readonly SessionEventLike[] })
-        ?? serviceOf<AgentPresetsLike>(this.ctx, 'agentPresets')?.composedPreset?.(liveAgent.ctx)
+      : serviceOf<AgentPresetsLike>(this.ctx, 'agentPresets')?.composedPreset?.(liveAgent.ctx)
         ?? record.header.agentPreset
     return {
       sessionId,

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { SessionMeshRuntime } from '../src/runtime.ts'
 import { SessionMeshError } from '../src/types.ts'
 
-function makeAgent(id: string, cwd: string, status = 'idle', agentPreset = 'cordis', events: unknown[] = []) {
+function makeAgent(id: string, cwd: string, status = 'idle', agentPreset = 'cordis') {
   const delivered: Array<{ kind: 'followup' | 'steer'; message: unknown }> = []
   return {
     id,
@@ -15,7 +15,6 @@ function makeAgent(id: string, cwd: string, status = 'idle', agentPreset = 'cord
     ctx: {},
     session: {
       header: { id, createdAt: 100, cwd, agentPreset },
-      events,
       requestHeader: () => undefined,
     },
     followup(message: unknown) {
@@ -78,7 +77,7 @@ function makeRuntime(records: Array<{ id: string; cwd?: string; createdAt: numbe
     async resume(options: { resumeSessionId: string; setup?: (agentCtx: unknown) => unknown | Promise<unknown> }) {
       const record = records.find((entry) => entry.id === options.resumeSessionId)
       if (record === undefined) throw new Error('missing session')
-      const agent = makeAgent(record.id, record.cwd ?? '/tmp/resumed', 'idle', record.agentPreset ?? 'cordis', record.events ?? [])
+      const agent = makeAgent(record.id, record.cwd ?? '/tmp/resumed', 'idle', record.agentPreset ?? 'cordis')
       await options.setup?.(agent.ctx)
       liveAgents.set(record.id, agent)
       return { agent }

@@ -1,4 +1,5 @@
-import type { JsonValue, ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   CreateSessionArgs,
   ListSessionsArgs,

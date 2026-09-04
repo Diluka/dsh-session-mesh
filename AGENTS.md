@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.1-rc.2`, Node `>=22`, pnpm, TypeScript, and Cordis Host services.
+`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.2-rc.1`, Node `>=22`, pnpm, TypeScript, and Cordis Host services.
 
 The Work line is the current implemented scope:
 
