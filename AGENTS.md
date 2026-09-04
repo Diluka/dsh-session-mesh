@@ -17,9 +17,9 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 - Install dependencies: `pnpm install`
 - Verify JSDoc/checkJs types: `pnpm typecheck`
 - Run tests: `pnpm test`
-- Run no-key DSH install E2E: `pnpm test:e2e:no-key`
+- Run no-key DSH headless tool E2E: `pnpm test:e2e:no-key`
 
-`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step.
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, and `send_session_message` tools through the Host `tools` service.
 
 `lib/` is the shipped JavaScript source. TypeScript only validates JS/JSDoc with `noEmit`; do not add a compile/build step.
 

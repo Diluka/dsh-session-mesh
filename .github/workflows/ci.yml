@@ -61,5 +61,5 @@ jobs:
       - name: Install DSH CLI for no-key E2E
         run: npm install --global @deepseek-ai/dsh@0.1.2-rc.1
 
-      - name: Run no-key DSH install E2E
+      - name: Run no-key DSH headless tool E2E
         run: pnpm test:e2e:no-key
