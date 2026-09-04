@@ -27,7 +27,7 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 
 - `lib/index.js`: Cordis plugin entry and tool registration.
 - `lib/runtime.js`: Host service integration for sessions, agents, workspaces, creation, resume, and delivery.
-- `lib/tools.js`: model tool schemas, argument parsing, output rendering.
+- `lib/tools/*.js`: one file per model tool, plus shared parsing/schema helpers in `lib/tools/common.js`.
 - `lib/message.js`: model-visible `dsh-relay` envelope generation.
 - `lib/types.js`: runtime error class.
 - `types/host.d.ts`: shared JSDoc/checkJs contracts for Host services, tool data, and relay envelope models.

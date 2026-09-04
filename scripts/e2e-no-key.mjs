@@ -83,8 +83,24 @@ try {
   assert.equal(profilePackage.dependencies?.['dsh-session-mesh'], `file:${tarball}`)
   assert.ok(profilePackage.dsh?.profile?.bundles?.includes('dsh-session-mesh'))
 
-  const packedTools = run('tar', ['-xOf', tarball, 'package/lib/tools.js'])
-  assert.doesNotMatch(packedTools, /get_current_session/)
+  const packedFiles = run('tar', ['-tf', tarball])
+  assert.doesNotMatch(packedFiles, /^package\/lib\/tools\.js$/m)
+  for (const expected of [
+    'package/lib/tools/common.js',
+    'package/lib/tools/create-session.js',
+    'package/lib/tools/list-sessions.js',
+    'package/lib/tools/send-session-message.js',
+  ]) {
+    assert.match(packedFiles, new RegExp('^' + expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm'))
+  }
+  const packedToolSources = run('tar', ['-xOf', tarball,
+    'package/lib/index.js',
+    'package/lib/tools/common.js',
+    'package/lib/tools/create-session.js',
+    'package/lib/tools/list-sessions.js',
+    'package/lib/tools/send-session-message.js',
+  ])
+  assert.doesNotMatch(packedToolSources, /get_current_session/)
 
   const config = run(dsh, ['--profile', 'headless', '--dump-config'], { env })
   assert.match(config, /# == dsh-session-mesh/)

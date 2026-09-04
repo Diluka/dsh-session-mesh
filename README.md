@@ -42,7 +42,7 @@ pnpm test:e2e:no-key
 
 `pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; the GitHub Actions workflow installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, and `send_session_message` tools through the Host `tools` service.
 
-The plugin ships source directly from `lib/*.js`. TypeScript is used only for `checkJs`/JSDoc validation with `noEmit`; there is no build step or generated `lib/` output.
+The plugin ships source directly from `lib/**/*.js`. TypeScript is used only for `checkJs`/JSDoc validation with `noEmit`; there is no build step or generated `lib/` output.
 
 ## DSH Bundle Patch
 

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { apply } from '../lib/index.js'
 import { SessionMeshRuntime } from '../lib/runtime.js'
-import { registerSessionMeshTools } from '../lib/tools.js'
 import { SessionMeshError } from '../lib/types.js'
 
 function makeAgent(id, cwd, status = 'idle', agentPreset = 'cordis') {
@@ -85,9 +85,9 @@ function makeRuntime(records, liveAgents, extras = {}) {
   return new SessionMeshRuntime(ctx)
 }
 
-test('registerSessionMeshTools exposes only durable mesh tools', () => {
+test('plugin entry exposes only durable mesh tools', () => {
   const names = []
-  registerSessionMeshTools({ tools: { register: (definition) => names.push(definition.name) } }, {})
+  apply({ tools: { register: (definition) => names.push(definition.name) }, agents: {}, get: () => undefined })
 
   assert.deepEqual(names, ['list_sessions', 'create_session', 'send_session_message'])
 })
