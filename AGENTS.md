@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.2-rc.1`, Node `>=22`, pnpm, TypeScript, and Cordis Host services.
+`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.2-rc.1`, Node `>=22`, pnpm, JavaScript with JSDoc checked by TypeScript, and Cordis Host services.
 
 The Work line is the current implemented scope:
 
@@ -16,20 +16,20 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 ## Setup Commands
 
 - Install dependencies: `pnpm install`
-- Typecheck source: `pnpm typecheck`
+- Verify JSDoc/checkJs types: `pnpm typecheck`
 - Run tests: `pnpm test`
-- Build package output: `pnpm build`
 
-`lib/` is generated build output and is ignored by Git.
+`lib/` is the shipped JavaScript source. TypeScript only validates JS/JSDoc with `noEmit`; do not add a compile/build step.
 
 ## Source Layout
 
-- `src/index.ts`: Cordis plugin entry and tool registration.
-- `src/runtime.ts`: Host service integration for sessions, agents, workspaces, creation, resume, and delivery.
-- `src/tools.ts`: model tool schemas, argument parsing, output rendering.
-- `src/message.ts`: model-visible `dsh-relay` envelope generation.
-- `src/types.ts`: JSON contracts for tools and relay envelope data.
-- `test/*.test.ts`: Node test runner coverage for message framing and fake Host runtime flows.
+- `lib/index.js`: Cordis plugin entry and tool registration.
+- `lib/runtime.js`: Host service integration for sessions, agents, workspaces, creation, resume, and delivery.
+- `lib/tools.js`: model tool schemas, argument parsing, output rendering.
+- `lib/message.js`: model-visible `dsh-relay` envelope generation.
+- `lib/types.js`: runtime error class.
+- `types/host.d.ts`: shared JSDoc/checkJs contracts for Host services, tool data, and relay envelope models.
+- `test/*.test.js`: Node test runner coverage for message framing and fake Host runtime flows.
 
 ## Runtime Boundaries
 
@@ -47,14 +47,13 @@ Run the full local suite before committing:
 ```bash
 pnpm typecheck
 pnpm test
-pnpm build
 ```
 
 Add or update tests when changing parser behavior, output JSON contracts, session filtering, creation semantics, resume behavior, delivery mode selection, or relay envelope/source shape.
 
 ## Code Style
 
-- Keep TypeScript modules small and focused by runtime boundary.
+- Keep JavaScript modules small and focused by runtime boundary; put shared contracts in `types/host.d.ts` and file-local types in JSDoc.
 - Return only lossless JSON from tools; never expose DSH live objects.
 - Keep comments rare and use them only for non-obvious lifecycle or trust-boundary logic.
 - Do not add dependencies unless the current behavior or tests require them.

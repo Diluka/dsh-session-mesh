@@ -16,21 +16,13 @@
   },
   "type": "module",
   "main": "./lib/index.js",
-  "types": "./lib/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./lib/index.d.ts",
-      "default": "./lib/index.js"
-    },
+    ".": "./lib/index.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "scripts",
-    "src",
     "lib",
-    "tsconfig.json",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
+    "types",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
@@ -40,12 +32,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"test/*.test.ts\"",
-    "postinstall": "node ./scripts/build-lib.mjs",
-    "prepack": "pnpm build",
-    "prepublishOnly": "pnpm build"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test"
   },
   "dsh": {
     "bundle": {
@@ -93,7 +81,6 @@
     "@deepseek-ai/dsh-typert-protocol": "0.1.2-rc.1",
     "@deepseek-ai/dsh-user-approval": "0.1.2-rc.1",
     "@deepseek-ai/dsh-util-values": "0.1.2-rc.1",
-    "@tsconfig/node22": "^22.0.6",
     "@types/node": "^22.20.1",
     "typescript": "^5.9.0"
   }

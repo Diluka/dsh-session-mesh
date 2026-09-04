@@ -56,9 +56,6 @@ importers:
       '@deepseek-ai/dsh-util-values':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
-      '@tsconfig/node22':
-        specifier: ^22.0.6
-        version: 22.0.6
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
@@ -197,9 +194,6 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
-  '@tsconfig/node22@22.0.6':
-    resolution: {integrity: sha512-/5thavHAnWDZwH2H6eEn/T8pBEBhtuKaWGMslsj82kJfvzQgOgEMK7X4goBbIUjgVtAzPTtM9Ml64LA0uxO6Iw==}
 
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
@@ -340,8 +334,6 @@ snapshots:
       '@standard-schema/spec': 1.1.0
 
   '@standard-schema/spec@1.1.0': {}
-
-  '@tsconfig/node22@22.0.6': {}
 
   '@types/node@22.20.1':
     dependencies:

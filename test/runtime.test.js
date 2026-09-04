@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { SessionMeshRuntime } from '../src/runtime.ts'
-import { SessionMeshError } from '../src/types.ts'
+import { SessionMeshRuntime } from '../lib/runtime.js'
+import { SessionMeshError } from '../lib/types.js'
 
-function makeAgent(id: string, cwd: string, status = 'idle', agentPreset = 'cordis') {
-  const delivered: Array<{ kind: 'followup' | 'steer'; message: unknown }> = []
+function makeAgent(id, cwd, status = 'idle', agentPreset = 'cordis') {
+  const delivered = []
   return {
     id,
     status,
@@ -17,17 +17,17 @@ function makeAgent(id: string, cwd: string, status = 'idle', agentPreset = 'cord
       header: { id, createdAt: 100, cwd, agentPreset },
       requestHeader: () => undefined,
     },
-    followup(message: unknown) {
+    followup(message) {
       delivered.push({ kind: 'followup', message })
     },
-    steer(message: unknown) {
+    steer(message) {
       delivered.push({ kind: 'steer', message })
     },
     delivered,
   }
 }
 
-function makeRuntime(records: Array<{ id: string; cwd?: string; createdAt: number; origin?: 'subagent'; agentPreset?: string; events?: Array<{ type: string; data?: unknown }> }>, liveAgents: Map<string, ReturnType<typeof makeAgent>>, extras: Record<string, unknown> = {}) {
+function makeRuntime(records, liveAgents, extras = {}) {
   const sessionQuery = {
     async listSessions() {
       return records.map((record) => ({
@@ -42,7 +42,7 @@ function makeRuntime(records: Array<{ id: string; cwd?: string; createdAt: numbe
         persisted: true,
       }))
     },
-    async readSession(sessionId: string) {
+    async readSession(sessionId) {
       const record = records.find((entry) => entry.id === sessionId)
       if (record === undefined) throw new Error('missing session')
       return {
@@ -56,25 +56,25 @@ function makeRuntime(records: Array<{ id: string; cwd?: string; createdAt: numbe
         events: record.events ?? [],
       }
     },
-    async readTitleSnapshots(sessionIds: readonly string[]) {
-      return sessionIds.map((sessionId) => ({ status: 'fulfilled' as const, value: { title: { title: `title:${sessionId}` } } }))
+    async readTitleSnapshots(sessionIds) {
+      return sessionIds.map((sessionId) => ({ status: 'fulfilled', value: { title: { title: `title:${sessionId}` } } }))
     },
-    async listEvents(sessionId: string) {
+    async listEvents(sessionId) {
       return [{ time: sessionId === 'session-target' ? 500 : 300 }]
     },
   }
   const agents = {
     list: () => [...liveAgents.values()],
-    get: (sessionId: string) => liveAgents.get(sessionId),
+    get: (sessionId) => liveAgents.get(sessionId),
     currentInitiator: () => liveAgents.get('session-source'),
-    async create(options: { sessionId: string; meta?: { cwd?: string; agentPreset?: string }; agentOptions?: unknown; setup?: (agentCtx: unknown) => unknown | Promise<unknown> }) {
+    async create(options) {
       const cwd = options.meta?.cwd ?? '/tmp/created'
       const agent = makeAgent(options.sessionId, cwd, 'idle', options.meta?.agentPreset ?? 'cordis')
       await options.setup?.(agent.ctx)
       liveAgents.set(options.sessionId, agent)
       return { agent }
     },
-    async resume(options: { resumeSessionId: string; setup?: (agentCtx: unknown) => unknown | Promise<unknown> }) {
+    async resume(options) {
       const record = records.find((entry) => entry.id === options.resumeSessionId)
       if (record === undefined) throw new Error('missing session')
       const agent = makeAgent(record.id, record.cwd ?? '/tmp/resumed', 'idle', record.agentPreset ?? 'cordis')
@@ -83,22 +83,22 @@ function makeRuntime(records: Array<{ id: string; cwd?: string; createdAt: numbe
       return { agent }
     },
   }
-  const services = new Map<string, unknown>([
+  const services = new Map([
     ['sessionQuery', sessionQuery],
     ['agentDefaultModel', { currentSelection: () => ({ provider: 'default-provider', model: 'default-model' }) }],
     ['agentPresets', {
-      resolve: async (id?: string) => ({ id: id ?? 'cordis' }),
-      mount: async (_agentCtx: unknown, id?: string) => ({ id: id ?? 'cordis' }),
+      resolve: async (id) => ({ id: id ?? 'cordis' }),
+      mount: async (_agentCtx, id) => ({ id: id ?? 'cordis' }),
       composedPreset: () => 'cordis',
     }],
-    ['sessionTitle', { rename: (_session: unknown, title: string) => ({ title }) }],
+    ['sessionTitle', { rename: (_session, title) => ({ title }) }],
     ...Object.entries(extras),
   ])
   const ctx = {
     agents,
-    get: (name: string) => services.get(name),
+    get: (name) => services.get(name),
   }
-  return new SessionMeshRuntime(ctx as never)
+  return new SessionMeshRuntime(ctx)
 }
 
 test('listSessions returns ordinary JSON rows with filters', async () => {
@@ -115,7 +115,7 @@ test('listSessions returns ordinary JSON rows with filters', async () => {
     },
   })
 
-  const result = await runtime.listSessions({ archived: 'include', sort: { by: 'updatedAt', order: 'desc' } }, source as never)
+  const result = await runtime.listSessions({ archived: 'include', sort: { by: 'updatedAt', order: 'desc' } }, source)
 
   assert.equal(result.total, 3)
   assert.equal(result.items[0]?.sessionId, 'session-target')
@@ -131,7 +131,7 @@ test('createSession creates an idle ordinary session without prompt delivery', a
     const liveAgents = new Map([[source.id, source]])
     const runtime = makeRuntime([{ id: 'session-source', cwd: temp, createdAt: 100 }], liveAgents)
 
-    const result = await runtime.createSession({ cwd: temp, title: 'Worker' }, source as never)
+    const result = await runtime.createSession({ cwd: temp, title: 'Worker' }, source)
 
     assert.equal(result.status, 'idle')
     assert.equal(result.created, true)
@@ -147,7 +147,7 @@ test('createSession creates an idle ordinary session without prompt delivery', a
 test('sendSessionMessage resumes a stopped session and injects relay envelope', async () => {
   const source = makeAgent('session-source', '/tmp/source')
   const liveAgents = new Map([[source.id, source]])
-  const mountedPresets: string[] = []
+  const mountedPresets = []
   const runtime = makeRuntime([
     { id: 'session-source', cwd: '/tmp/source', createdAt: 100 },
     {
@@ -159,8 +159,8 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
     },
   ], liveAgents, {
     agentPresets: {
-      resolve: async (id?: string) => ({ id: id ?? 'cordis' }),
-      mount: async (_agentCtx: unknown, id?: string) => {
+      resolve: async (id) => ({ id: id ?? 'cordis' }),
+      mount: async (_agentCtx, id) => {
         mountedPresets.push(id ?? 'cordis')
         return { id: id ?? 'cordis' }
       },
@@ -168,11 +168,11 @@ test('sendSessionMessage resumes a stopped session and injects relay envelope', 
     },
   })
 
-  const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'Please inspect this.', mode: 'queue' }, source as never)
+  const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'Please inspect this.', mode: 'queue' }, source)
   const target = liveAgents.get('session-target')
   const delivered = target?.delivered[0]
-  const message = delivered?.message as { content: Array<{ text: string }>; source: Record<string, unknown> }
-  const text = message.content[0]?.text ?? ''
+  const message = delivered?.message
+  const text = message?.content?.[0]?.text ?? ''
 
   assert.equal(result.accepted, true)
   assert.equal(result.deliveredVia, 'resume-followup')
@@ -193,7 +193,7 @@ test('sendSessionMessage rejects self delivery', async () => {
   const runtime = makeRuntime([{ id: 'session-source', cwd: '/tmp/source', createdAt: 100 }], new Map([[source.id, source]]))
 
   await assert.rejects(
-    runtime.sendSessionMessage({ sessionId: 'session-source', message: 'loop' }, source as never),
+    runtime.sendSessionMessage({ sessionId: 'session-source', message: 'loop' }, source),
     (error) => error instanceof SessionMeshError && error.code === 'self-message',
   )
 })

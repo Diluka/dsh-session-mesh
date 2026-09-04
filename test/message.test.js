@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRelayEnvelopeData, frameRelayMessage, relayEnvelope } from '../src/message.ts'
-import type { SenderIdentity } from '../src/types.ts'
+import { buildRelayEnvelopeData, frameRelayMessage, relayEnvelope } from '../lib/message.js'
 
 test('relay envelope carries generated sender identity for post-processing', () => {
-  const from: SenderIdentity = {
+  const from = {
     sessionId: 'session-source',
     title: 'Source Agent',
     cwd: '/tmp/source',

@@ -38,10 +38,9 @@ Run checks:
 ```bash
 pnpm typecheck
 pnpm test
-pnpm build
 ```
 
-Build output is emitted to `lib/` and ignored by Git. The package `postinstall`, `prepack`, and `prepublishOnly` scripts build the library.
+The plugin ships source directly from `lib/*.js`. TypeScript is used only for `checkJs`/JSDoc validation with `noEmit`; there is no build step or generated `lib/` output.
 
 ## DSH Bundle Patch
 
