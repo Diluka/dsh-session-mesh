@@ -92,6 +92,7 @@ try {
     'package/lib/tools/get-session-thread.js',
     'package/lib/tools/list-sessions.js',
     'package/lib/tools/send-session-message.js',
+    'package/scripts/report-feedback-issue.mjs',
   ]) {
     assert.match(packedFiles, new RegExp('^' + expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm'))
   }

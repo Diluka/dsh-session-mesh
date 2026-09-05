@@ -23,6 +23,7 @@
   "files": [
     "lib",
     "types",
+    "scripts/report-feedback-issue.mjs",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
@@ -34,7 +35,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test",
-    "test:e2e:no-key": "node scripts/e2e-no-key.mjs"
+    "test:e2e:no-key": "node scripts/e2e-no-key.mjs",
+    "issue:feedback": "node scripts/report-feedback-issue.mjs"
   },
   "dsh": {
     "bundle": {

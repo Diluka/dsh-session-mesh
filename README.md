@@ -56,6 +56,16 @@ Use `summary` as the semantic thread breadcrumb. `get_session_thread` stores and
 
 Delivery and indexing are reported separately: a message can be accepted by the target session while `threadIndexed` is `false` if the sidecar write fails. The current sidecar assumes one DSH Host process writes a given thread at a time.
 
+## Feedback Issues
+
+Local agents can file actionable bugs or friction reports against this repository with:
+
+```bash
+pnpm issue:feedback -- --kind friction --tool get_session_thread --title "Short title" --body "What happened, expected behavior, and reproduction notes."
+```
+
+Use `--dry-run` first when checking formatting. The script uses `gh issue create`, detects the GitHub repo from `origin`, and adds metadata fields for `tool`, `sessionId`, `threadId`, and `messageId` when provided.
+
 ## Development
 
 Install dependencies:
