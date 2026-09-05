@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { apply } from '../lib/index.js'
 import { SessionMeshRuntime } from '../lib/runtime.js'
+import { buildGetSessionThreadTool } from '../lib/tools/get-session-thread.js'
 import { SessionMeshError } from '../lib/types.js'
 
 function makeAgent(id, cwd, status = 'idle', agentPreset = 'cordis') {
@@ -90,6 +91,55 @@ test('plugin entry exposes only durable mesh tools', () => {
   apply({ tools: { register: (definition) => names.push(definition.name) }, agents: {}, get: () => undefined })
 
   assert.deepEqual(names, ['list_sessions', 'create_session', 'send_session_message', 'get_session_thread'])
+})
+
+test('get_session_thread render shows latest receipt summaries', () => {
+  const runtime = makeRuntime([], new Map(), {}, {
+    threadStore: {
+      async append() {},
+      async readThread(args) {
+        return { threadId: args.threadId, messages: [], count: 0, total: 0 }
+      },
+    },
+  })
+  const tool = buildGetSessionThreadTool(runtime)
+  const blocks = tool.output.render({}, {
+    threadId: 'agt-thread',
+    count: 2,
+    total: 2,
+    messages: [
+      {
+        seq: 1,
+        threadId: 'agt-thread',
+        messageId: 'agm-1',
+        sentAt: '2026-01-02T03:04:05.000Z',
+        from: { sessionId: 'session-a' },
+        to: { sessionId: 'session-b' },
+        mode: 'queue',
+        deliveredVia: 'followup',
+        summary: 'Initial request',
+        expectReply: true,
+      },
+      {
+        seq: 2,
+        threadId: 'agt-thread',
+        messageId: 'agm-2',
+        sentAt: '2026-01-02T03:04:06.000Z',
+        from: { sessionId: 'session-b' },
+        to: { sessionId: 'session-a' },
+        mode: 'queue',
+        deliveredVia: 'followup',
+        inReplyTo: 'agm-1',
+        summary: 'Reply summary',
+      },
+    ],
+  })
+  const text = blocks[0]?.type === 'text' ? blocks[0].text : ''
+
+  assert.match(text, /agt-thread: 2\/2 indexed relay messages/)
+  assert.match(text, /#1 agm-1: session-a -> session-b via followup expectReply - Initial request/)
+  assert.match(text, /#2 agm-2: session-b -> session-a via followup replyTo agm-1 - Reply summary/)
+  assert.doesNotMatch(text, /message body/)
 })
 
 test('listSessions returns ordinary JSON rows with filters', async () => {

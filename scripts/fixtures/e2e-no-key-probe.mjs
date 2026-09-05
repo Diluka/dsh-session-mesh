@@ -45,6 +45,13 @@ function assertToolResult(name, result) {
   return result.value
 }
 
+function renderedText(result) {
+  return (result.content ?? [])
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+}
+
 function parseRelayFrontmatter(text) {
   const lines = text.split('\n')
   if (lines[0] !== '---' || lines[1] !== 'dsh-relay:') fail('relay frontmatter header is not parseable: ' + JSON.stringify(text))
@@ -148,16 +155,21 @@ async function run(ctx) {
     }
     await sender.agent.whenIdle()
 
-    const thread = assertToolResult(
-      'get_session_thread',
-      await call('get_session_thread', { threadId: sent.threadId, limit: 10 }, sender.agent),
-    )
+    const threadResult = await call('get_session_thread', { threadId: sent.threadId, limit: 10 }, sender.agent)
+    const thread = assertToolResult('get_session_thread', threadResult)
+    const threadRendered = renderedText(threadResult)
     if (thread.total !== 2 || thread.count !== 2 || thread.messages?.[0]?.messageId !== sent.messageId || thread.messages?.[1]?.messageId !== replied.messageId) {
       fail('get_session_thread returned bad payload: ' + JSON.stringify(thread))
     }
     const threadJson = JSON.stringify(thread)
     if (threadJson.includes('E2E relay payload body') || threadJson.includes('E2E reply payload body')) {
       fail('get_session_thread must not expose message bodies: ' + threadJson)
+    }
+    if (!threadRendered.includes(sent.messageId) || !threadRendered.includes('E2E relay summary') || !threadRendered.includes('E2E reply summary')) {
+      fail('get_session_thread render is not useful enough: ' + threadRendered)
+    }
+    if (threadRendered.includes('E2E relay payload body') || threadRendered.includes('E2E reply payload body')) {
+      fail('get_session_thread render must not expose message bodies: ' + threadRendered)
     }
     if (thread.messages[1].inReplyTo !== sent.messageId || thread.messages[1].from?.sessionId !== created.sessionId || thread.messages[1].to?.sessionId !== senderSessionId) {
       fail('get_session_thread did not preserve reply metadata: ' + JSON.stringify(thread))
