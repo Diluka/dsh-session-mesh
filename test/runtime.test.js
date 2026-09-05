@@ -28,7 +28,7 @@ function makeAgent(id, cwd, status = 'idle', agentPreset = 'cordis') {
   }
 }
 
-function makeRuntime(records, liveAgents, extras = {}) {
+function makeRuntime(records, liveAgents, extras = {}, options = {}) {
   const sessionQuery = {
     async listSessions() {
       return records.map((record) => ({
@@ -82,14 +82,14 @@ function makeRuntime(records, liveAgents, extras = {}) {
     agents,
     get: (name) => services.get(name),
   }
-  return new SessionMeshRuntime(ctx)
+  return new SessionMeshRuntime(ctx, options)
 }
 
 test('plugin entry exposes only durable mesh tools', () => {
   const names = []
   apply({ tools: { register: (definition) => names.push(definition.name) }, agents: {}, get: () => undefined })
 
-  assert.deepEqual(names, ['list_sessions', 'create_session', 'send_session_message'])
+  assert.deepEqual(names, ['list_sessions', 'create_session', 'send_session_message', 'get_session_thread'])
 })
 
 test('listSessions returns ordinary JSON rows with filters', async () => {
@@ -158,61 +158,126 @@ test('createSession creates an idle ordinary session without prompt delivery', a
   }
 })
 
-test('sendSessionMessage resumes a stopped session and injects relay envelope', async () => {
+test('sendSessionMessage indexes a two-hop relay thread without reading session logs', async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'dsh-session-mesh-thread-'))
+  try {
+    const source = makeAgent('session-source', '/tmp/source')
+    const liveAgents = new Map([[source.id, source]])
+    const mountedPresets = []
+    const runtime = makeRuntime([
+      { id: 'session-source', cwd: '/tmp/source', createdAt: 100 },
+      {
+        id: 'session-target',
+        cwd: '/tmp/target',
+        createdAt: 200,
+        agentPreset: 'old-preset',
+      },
+    ], liveAgents, {
+      agentPresets: {
+        resolve: async (id) => ({ id: id ?? 'cordis' }),
+        mount: async (_agentCtx, id) => {
+          mountedPresets.push(id ?? 'cordis')
+          return { id: id ?? 'cordis' }
+        },
+        composedPreset: () => 'cordis',
+      },
+      sessionQuery: {
+        async listSessions() {
+          return [
+            { header: { id: 'session-source', createdAt: 100, cwd: '/tmp/source' }, live: true, persisted: true },
+            { header: { id: 'session-target', createdAt: 200, cwd: '/tmp/target', agentPreset: 'old-preset' }, live: false, persisted: true },
+          ]
+        },
+        async readSession() {
+          throw new Error('sendSessionMessage must not read complete session logs for metadata')
+        },
+        async readTitleSnapshots() {
+          throw new Error('sendSessionMessage must not fold title logs for metadata')
+        },
+      },
+    }, { threadStoreOptions: { root: join(temp, 'threads'), pageSize: 2 } })
+
+    const result = await runtime.sendSessionMessage({
+      sessionId: 'session-target',
+      message: 'Please inspect this.',
+      summary: 'Initial inspection request',
+      mode: 'queue',
+      expectReply: true,
+    }, source)
+    const target = liveAgents.get('session-target')
+    const delivered = target?.delivered[0]
+    const message = delivered?.message
+    const text = message?.content?.[0]?.text ?? ''
+
+    assert.equal(result.accepted, true)
+    assert.equal(result.threadIndexed, true)
+    assert.match(result.threadId, /^agt-/)
+    assert.equal(result.deliveredVia, 'resume-followup')
+    assert.deepEqual(mountedPresets, ['old-preset'])
+    assert.equal(delivered?.kind, 'followup')
+    assert.equal(target?.delivered.length, 1)
+    assert.equal(message.content.length, 1)
+    assert.deepEqual(message.source, { kind: 'plugin', plugin: 'dsh-session-mesh' })
+    assert.match(text, /^---\ndsh-relay:/)
+    assert.match(text, new RegExp(`messageId: "${result.messageId}"`))
+    assert.match(text, new RegExp(`threadId: "${result.threadId}"`))
+    assert.match(text, /fromSessionId: "session-source"/)
+    assert.match(text, /Please inspect this\./)
+    assert.doesNotMatch(text, /trust:/)
+
+    const reply = await runtime.sendSessionMessage({
+      sessionId: 'session-source',
+      message: 'I inspected it.',
+      summary: 'Inspection reply',
+      threadId: result.threadId,
+      inReplyTo: result.messageId,
+    }, target)
+
+    assert.equal(reply.accepted, true)
+    assert.equal(reply.threadId, result.threadId)
+    assert.equal(reply.threadIndexed, true)
+    assert.equal(reply.deliveredVia, 'followup')
+
+    const thread = await runtime.getSessionThread({ threadId: result.threadId, limit: 10 })
+    assert.equal(thread.total, 2)
+    assert.equal(thread.count, 2)
+    assert.deepEqual(thread.messages.map((entry) => entry.messageId), [result.messageId, reply.messageId])
+    assert.equal(thread.messages[0]?.from.sessionId, 'session-source')
+    assert.equal(thread.messages[0]?.to.sessionId, 'session-target')
+    assert.equal(thread.messages[0]?.expectReply, true)
+    assert.equal(thread.messages[0]?.summary, 'Initial inspection request')
+    assert.equal(thread.messages[1]?.from.sessionId, 'session-target')
+    assert.equal(thread.messages[1]?.to.sessionId, 'session-source')
+    assert.equal(thread.messages[1]?.inReplyTo, result.messageId)
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
+
+test('sendSessionMessage reports index failure after successful delivery', async () => {
   const source = makeAgent('session-source', '/tmp/source')
-  const liveAgents = new Map([[source.id, source]])
-  const mountedPresets = []
+  const target = makeAgent('session-target', '/tmp/target')
+  const liveAgents = new Map([[source.id, source], [target.id, target]])
   const runtime = makeRuntime([
     { id: 'session-source', cwd: '/tmp/source', createdAt: 100 },
-    {
-      id: 'session-target',
-      cwd: '/tmp/target',
-      createdAt: 200,
-      agentPreset: 'old-preset',
-    },
-  ], liveAgents, {
-    agentPresets: {
-      resolve: async (id) => ({ id: id ?? 'cordis' }),
-      mount: async (_agentCtx, id) => {
-        mountedPresets.push(id ?? 'cordis')
-        return { id: id ?? 'cordis' }
+    { id: 'session-target', cwd: '/tmp/target', createdAt: 200 },
+  ], liveAgents, {}, {
+    threadStore: {
+      async append() {
+        throw new Error('disk full')
       },
-      composedPreset: () => 'cordis',
-    },
-    sessionQuery: {
-      async listSessions() {
-        return [
-          { header: { id: 'session-source', createdAt: 100, cwd: '/tmp/source' }, live: true, persisted: true },
-          { header: { id: 'session-target', createdAt: 200, cwd: '/tmp/target', agentPreset: 'old-preset' }, live: false, persisted: true },
-        ]
-      },
-      async readSession() {
-        throw new Error('sendSessionMessage must not read complete session logs for metadata')
-      },
-      async readTitleSnapshots() {
-        throw new Error('sendSessionMessage must not fold title logs for metadata')
+      async readThread(args) {
+        return { threadId: args.threadId, messages: [], count: 0, total: 0 }
       },
     },
   })
 
-  const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'Please inspect this.', mode: 'queue' }, source)
-  const target = liveAgents.get('session-target')
-  const delivered = target?.delivered[0]
-  const message = delivered?.message
-  const text = message?.content?.[0]?.text ?? ''
+  const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'deliver once' }, source)
 
   assert.equal(result.accepted, true)
-  assert.equal(result.deliveredVia, 'resume-followup')
-  assert.deepEqual(mountedPresets, ['old-preset'])
-  assert.equal(delivered?.kind, 'followup')
-  assert.equal(target?.delivered.length, 1)
-  assert.equal(message.content.length, 1)
-  assert.deepEqual(message.source, { kind: 'plugin', plugin: 'dsh-session-mesh' })
-  assert.match(text, /^---\ndsh-relay:/)
-  assert.match(text, new RegExp(`messageId: "${result.messageId}"`))
-  assert.match(text, /fromSessionId: "session-source"/)
-  assert.match(text, /Please inspect this\./)
-  assert.doesNotMatch(text, /trust:/)
+  assert.equal(result.threadIndexed, false)
+  assert.equal(result.threadIndexError, 'disk full')
+  assert.equal(target.delivered.length, 1)
 })
 
 test('sendSessionMessage rejects self delivery', async () => {

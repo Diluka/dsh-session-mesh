@@ -4,6 +4,7 @@ export const inject = ['llm', 'tools', 'agents', 'agentLoop', 'appExit']
 const provider = 'dsh-session-mesh-e2e'
 const model = 'fake-model'
 const senderSessionId = 'session-dsh-session-mesh-e2e-sender'
+const meshToolNames = ['list_sessions', 'create_session', 'send_session_message', 'get_session_thread']
 
 const fakeAdapter = {
   providerInfo(route) {
@@ -44,6 +45,20 @@ function assertToolResult(name, result) {
   return result.value
 }
 
+function parseRelayFrontmatter(text) {
+  const lines = text.split('\n')
+  if (lines[0] !== '---' || lines[1] !== 'dsh-relay:') fail('relay frontmatter header is not parseable: ' + JSON.stringify(text))
+  const parsed = {}
+  for (let index = 2; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (line === '---') return parsed
+    const match = /^  ([A-Za-z][A-Za-z0-9]*): (.*)$/.exec(line)
+    if (!match) fail('relay frontmatter line is not parseable: ' + line)
+    parsed[match[1]] = JSON.parse(match[2])
+  }
+  fail('relay frontmatter terminator missing: ' + JSON.stringify(text))
+}
+
 function firstRelayText(agent) {
   for (const event of agent.session.snapshotEvents()) {
     if (event.type !== 'user/message') continue
@@ -71,7 +86,7 @@ async function run(ctx) {
       signal: AbortSignal.timeout(20000),
     })
     const schemas = ctx.tools.schemas(sender.agent).map((schema) => schema.name)
-    for (const expected of ['list_sessions', 'create_session', 'send_session_message']) {
+    for (const expected of meshToolNames) {
       if (!schemas.includes(expected)) fail('missing tool schema ' + expected + ' in ' + schemas.join(','))
     }
     if (schemas.includes('get_current_session')) fail('removed tool get_current_session is still visible')
@@ -96,12 +111,12 @@ async function run(ctx) {
       'send_session_message',
       await call('send_session_message', {
         sessionId: created.sessionId,
-        message: 'E2E relay payload',
-        summary: 'E2E relay payload',
-        expectReply: false,
+        message: 'E2E relay payload body',
+        summary: 'E2E relay summary',
+        expectReply: true,
       }, sender.agent),
     )
-    if (sent.accepted !== true || sent.to?.sessionId !== created.sessionId || sent.from?.sessionId !== senderSessionId) {
+    if (sent.accepted !== true || sent.threadIndexed !== true || typeof sent.threadId !== 'string' || sent.to?.sessionId !== created.sessionId || sent.from?.sessionId !== senderSessionId) {
       fail('send_session_message returned bad payload: ' + JSON.stringify(sent))
     }
 
@@ -111,13 +126,50 @@ async function run(ctx) {
     const relayText = firstRelayText(target)
     if (!relayText?.startsWith('---\ndsh-relay:\n')) fail('relay frontmatter missing: ' + JSON.stringify(relayText))
     if (relayText.includes('\n  trust:')) fail('relay frontmatter must not contain trust: ' + relayText)
-    if (!relayText.includes('\n  fromSessionId: "' + senderSessionId + '"')) fail('relay sender id missing: ' + relayText)
-    if (!relayText.endsWith('\n\nE2E relay payload')) fail('relay payload missing after frontmatter: ' + relayText)
+    const relayFrontmatter = parseRelayFrontmatter(relayText)
+    if (relayFrontmatter.messageId !== sent.messageId) fail('relay message id missing: ' + JSON.stringify(relayFrontmatter))
+    if (relayFrontmatter.threadId !== sent.threadId) fail('relay thread id missing: ' + JSON.stringify(relayFrontmatter))
+    if (relayFrontmatter.fromSessionId !== senderSessionId) fail('relay sender id missing: ' + JSON.stringify(relayFrontmatter))
+    if (relayFrontmatter.delivery !== 'session.prompt') fail('relay delivery missing: ' + JSON.stringify(relayFrontmatter))
+    if (!relayText.endsWith('\n\nE2E relay payload body')) fail('relay payload missing after frontmatter: ' + relayText)
+
+    const replied = assertToolResult(
+      'send_session_message reply',
+      await call('send_session_message', {
+        sessionId: senderSessionId,
+        message: 'E2E reply payload body',
+        summary: 'E2E reply summary',
+        threadId: sent.threadId,
+        inReplyTo: sent.messageId,
+      }, target),
+    )
+    if (replied.accepted !== true || replied.threadId !== sent.threadId || replied.threadIndexed !== true || replied.from?.sessionId !== created.sessionId) {
+      fail('send_session_message reply returned bad payload: ' + JSON.stringify(replied))
+    }
+    await sender.agent.whenIdle()
+
+    const thread = assertToolResult(
+      'get_session_thread',
+      await call('get_session_thread', { threadId: sent.threadId, limit: 10 }, sender.agent),
+    )
+    if (thread.total !== 2 || thread.count !== 2 || thread.messages?.[0]?.messageId !== sent.messageId || thread.messages?.[1]?.messageId !== replied.messageId) {
+      fail('get_session_thread returned bad payload: ' + JSON.stringify(thread))
+    }
+    const threadJson = JSON.stringify(thread)
+    if (threadJson.includes('E2E relay payload body') || threadJson.includes('E2E reply payload body')) {
+      fail('get_session_thread must not expose message bodies: ' + threadJson)
+    }
+    if (thread.messages[1].inReplyTo !== sent.messageId || thread.messages[1].from?.sessionId !== created.sessionId || thread.messages[1].to?.sessionId !== senderSessionId) {
+      fail('get_session_thread did not preserve reply metadata: ' + JSON.stringify(thread))
+    }
 
     return {
-      toolSchemas: schemas.filter((name) => name === 'list_sessions' || name === 'create_session' || name === 'send_session_message'),
+      toolSchemas: schemas.filter((name) => meshToolNames.includes(name)),
       createdSessionId: created.sessionId,
+      threadId: sent.threadId,
+      threadCount: thread.count,
       deliveredVia: sent.deliveredVia,
+      replyDeliveredVia: replied.deliveredVia,
       targetStatus: target.status,
       relayFirstLine: relayText.split('\n')[0],
     }

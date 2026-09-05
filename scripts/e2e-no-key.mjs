@@ -86,8 +86,10 @@ try {
   const packedFiles = run('tar', ['-tf', tarball])
   assert.doesNotMatch(packedFiles, /^package\/lib\/tools\.js$/m)
   for (const expected of [
+    'package/lib/thread-store.js',
     'package/lib/tools/common.js',
     'package/lib/tools/create-session.js',
+    'package/lib/tools/get-session-thread.js',
     'package/lib/tools/list-sessions.js',
     'package/lib/tools/send-session-message.js',
   ]) {
@@ -95,8 +97,10 @@ try {
   }
   const packedToolSources = run('tar', ['-xOf', tarball,
     'package/lib/index.js',
+    'package/lib/thread-store.js',
     'package/lib/tools/common.js',
     'package/lib/tools/create-session.js',
+    'package/lib/tools/get-session-thread.js',
     'package/lib/tools/list-sessions.js',
     'package/lib/tools/send-session-message.js',
   ])
@@ -118,9 +122,12 @@ try {
   const resultLine = headlessOutput.split(/\r?\n/).find((line) => line.startsWith(resultPrefix))
   assert.ok(resultLine, `headless E2E did not report a result marker:\n${headlessOutput}`)
   const result = JSON.parse(resultLine.slice(resultPrefix.length))
-  assert.deepEqual(result.toolSchemas, ['list_sessions', 'create_session', 'send_session_message'])
+  assert.deepEqual(result.toolSchemas, ['list_sessions', 'create_session', 'send_session_message', 'get_session_thread'])
   assert.match(result.createdSessionId, /^session-/)
+  assert.match(result.threadId, /^agt-/)
+  assert.equal(result.threadCount, 2)
   assert.equal(result.deliveredVia, 'followup')
+  assert.equal(result.replyDeliveredVia, 'followup')
   assert.equal(result.targetStatus, 'idle')
   assert.equal(result.relayFirstLine, '---')
 
