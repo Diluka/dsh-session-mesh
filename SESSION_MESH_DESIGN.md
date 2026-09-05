@@ -2,9 +2,9 @@
 
 ## 目标
 
-`dsh-session-mesh` 是一个面向普通 DSH 会话的独立插件。它让代理可以发现、创建并向任意可寻址 DSH 会话发送代理消息，而不是只能给父子关系里的 subagent 发消息，或只能给安装了 `dsh-crosstalk` 的在线 peer 发消息。
+`dsh-session-mesh` 是一个面向普通 DSH 会话的独立插件。它让代理可以发现、创建并向任意可寻址 DSH 会话发送代理消息。
 
-这里的“无限制交叉通信”指工具寻址模型足够开放：任意普通 sessionId 都可以成为目标，目标可以是 `running`、`idle` 或 `stopped`，通信不依赖父子层级、不依赖 crosstalk registry、不要求目标已经在线。实际执行仍遵守 DSH host、同一用户、当前会话权限、sandbox/approval、系统/开发者/用户指令边界。
+这里的“无限制交叉通信”指工具寻址模型足够开放：任意普通 sessionId 都可以成为目标，目标可以是 `running`、`idle` 或 `stopped`，通信不依赖父子层级、不要求目标已经在线。实际执行仍遵守 DSH host、同一用户、当前会话权限、sandbox/approval、系统/开发者/用户指令边界。
 
 核心产品目标：
 
@@ -17,22 +17,15 @@
 
 ## 插件边界
 
-建议新建独立仓库和独立插件，例如：
+仓库和插件名：
 
 ```text
 dsh-session-mesh
 ```
 
-不要把这些能力继续塞进 `dsh-crosstalk`。
+`dsh-session-mesh` 的核心职责是普通 DSH session 生命周期与 sessionId 路由：列出 durable sessions、创建普通会话、恢复 stopped 会话并投递代理消息。它提供独立工具 `list_sessions`、`create_session`、`send_session_message`、`get_session_thread`，同时保持原生 `list_agents` / `send_message` 的父子 agent 语义稳定。
 
-`dsh-crosstalk` 的核心职责是本地 peer presence 与 inbox relay：安装了同一插件的在线会话发布心跳，互相按 peer name/ref 通信。`dsh-session-mesh` 的核心职责是普通 DSH session 生命周期与 sessionId 路由：列出 durable sessions、创建普通会话、恢复 stopped 会话并投递代理消息。
-
-两者可以共存：
-
-- `dsh-crosstalk` 保留 `list_agents({ scope: "peers" })` 和 peer name/ref 消息。
-- `dsh-session-mesh` 提供独立工具 `list_sessions`、`create_session`、`send_session_message`。
-- 原生 `list_agents` / `send_message` 语义保持稳定。
-- 普通 session/workspace 系统是唯一权威状态源；插件不写第二套普通会话数据库。
+普通 session/workspace 系统是唯一权威状态源；插件不写第二套普通会话数据库。B2 thread index 只保存本插件 relay 发送路径的摘要和 receipt，用于按 `threadId` 查询协作上下文。
 
 ## 设计原则
 
@@ -405,7 +398,7 @@ type SendSessionMessageArgs = {
 }
 ```
 
-新增只读工具可选：
+新增只读工具：
 
 ```ts
 type GetSessionThreadArgs = {
@@ -414,18 +407,20 @@ type GetSessionThreadArgs = {
 }
 ```
 
-行为：
+当前最小行为：
 
-- 每条 relay message 有 `messageId`。
-- 回复携带 `inReplyTo`。
-- 多轮协作携带 `threadId`。
-- `expectReply` 可让 UI 标记“等待对方回复”，但插件不阻塞等待。
+- 每条 relay message 有 `messageId` 和 `threadId`。
+- 新线程由 `send_session_message` 在未传 `threadId` 时创建。
+- 回复携带同一个 `threadId` 和父级 relay `messageId` 作为 `inReplyTo`。
+- `expectReply` 进入 relay 摘要 metadata，插件不阻塞等待。
+- `get_session_thread` 只读取插件维护的 relay-thread 索引，不扫描 DSH session logs。
 
 验收：
 
 - A→B→A 往返能在 metadata 中关联。
 - 多个 target 并行时能按 thread 区分。
 - 目标 agent 可从 envelope 直接知道如何回复。
+- 已投递消息与索引写入结果分别报告，索引失败不会伪装成投递失败。
 
 ### B3：批量发送与 fanout
 
@@ -693,7 +688,6 @@ type RelayLoopFields = {
 
 - 继续使用 sessionId 作为逻辑目标，但引入 transport adapter。
 - 本地 Host transport：当前 Work 阶段能力。
-- Crosstalk transport：桥接现有 `dsh-crosstalk` peer registry。
 - Remote transport：需要认证、加密、presence、队列和冲突处理。
 
 边界：
@@ -774,31 +768,32 @@ Client 只负责展示和交互，不成为普通 session 状态源。
 
 - 普通 session、workspace、archive 状态来自 DSH 自己的持久化。
 - agent relay 消息作为目标会话事件进入 DSH session log。
-- thread/message index 如果 Better 阶段需要，应从 session log 派生或作为可重建索引。
+- relay thread 索引只记录本插件发送路径上的摘要与投递 receipt，用于按 `threadId` 关联协作上下文。
 
-短期状态：
+B2 sidecar 索引：
 
-- message counter 可以在内存中维护。
-- 持久 message id 建议使用 `senderSessionId + timestamp + random` 或 DSH event id 派生。
+- 默认路径为 `${DSH_HOME:-~/.dsh}/session-mesh/threads-v1`。
+- 目录布局为 `threadId/manifest.json` 和 `threadId/pages/page-000000.json` 形式的固定大小页面。
+- `get_session_thread` 按精确 `threadId` 读取 manifest 和请求窗口覆盖的尾页。
+- 每条记录保存 sender/target、`messageId`、`threadId`、`inReplyTo`、投递模式、索引序号和 bounded caller-provided `summary`。
+- sidecar 不复制 relay 正文；完整消息正文的权威位置仍是目标 session log。
+- 发送 accepted 和 thread index 写入独立报告：`send_session_message` 返回 `threadIndexed` 与可选 `threadIndexError`。
+
+运行状态：
+
+- message id 和 thread id 使用随机 UUID 派生的安全标识符。
+- 单个 DSH Host 进程内的 thread 写入按 threadId 串行化，避免同线程并发追加覆盖。
 - policy config 来自插件配置，不写入 per-message 状态。
 
 ## 与现有能力的关系
 
-### `subagent` / `subagent_fork`
+### 父子 subagent 工具
 
-这些工具仍适合当前会话内的父子协作。`dsh-session-mesh` 适合横向普通会话协作，尤其是多个普通 DSH sessions 之间互相委派、通知、恢复和回复。
-
-### `dsh-crosstalk`
-
-`dsh-crosstalk` 解决安装同一插件的在线 peer 之间的轻量 inbox 通信。`dsh-session-mesh` 解决 DSH durable session 的全局寻址和生命周期操作。两者可以共用 envelope 思路和 UI 卡片风格，但状态源分离。
-
-### `dsh-session-ref`
-
-session ref 是只读上下文引用。`dsh-session-mesh` 是可写通信和创建能力。两者可以组合：消息正文可引用 `dsh-session:<id>`，但投递本身由 `send_session_message` 完成。
+DSH 自带的父子 agent 通信适合当前会话内的派生 worker 协作。`dsh-session-mesh` 适合横向普通会话协作，尤其是多个普通 DSH sessions 之间互相委派、通知、恢复和回复。
 
 ### 原生 `send_message`
 
-原生 `send_message` 保持父子 subagent 和 crosstalk peer 语义。`dsh-session-mesh` 使用独立工具名，避免未知字符串被偷偷解释成普通 sessionId。
+原生 `send_message` 保持父子 subagent 语义。`dsh-session-mesh` 使用独立工具名，避免未知字符串被偷偷解释成普通 sessionId。
 
 ## 当前已验证事实
 
@@ -807,9 +802,9 @@ session ref 是只读上下文引用。`dsh-session-mesh` 是可写通信和创�
 - `sessionQuery + workspaceRegistry + agents.list()` 可以列出 durable sessions，并拼接 live/stopped/archived 状态。
 - `agents.resume({ resumeSessionId })` 可恢复 stopped session。
 - 恢复或 live agent 可通过 `followup` / `steer` 接收消息。
-- `session.prompt` 的模式是 `"queue" | "steer"`。
-- 动态 Cordis tool 能热加载验证只读 `list_sessions` 原型。
-- 动态 Cordis tool schema 需要避免根 `parameters.additionalProperties: false`，并对嵌套 object schema 显式声明 `additionalProperties`。
+- relay 消息以目标 session 的普通 user/message carrier 投递，metadata frontmatter 保留在正文中。
+- 无 key headless DSH E2E 覆盖真实工具执行：`list_sessions`、`create_session`、`send_session_message`、`get_session_thread`。
+- `storageDomain` JSON `per-record` 在 DSH `0.1.2-rc.1` 中打开时仍会加载整张表；thread sidecar 采用精确文件路径读取目标 thread 页。
 
 ## 总体路线图
 

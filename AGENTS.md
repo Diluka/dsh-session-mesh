@@ -4,13 +4,14 @@
 
 `dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.2-rc.1`, Node `>=22`, pnpm, JavaScript with JSDoc checked by TypeScript, and Cordis Host services.
 
-The Work line is the current implemented scope:
+The current implemented scope is the Work line plus the minimal B2 relay-thread index:
 
 - List durable sessions with ordinary JSON rows.
 - Create ordinary DSH sessions without sending a prompt.
 - Send peer-agent relay messages to ordinary `sessionId` targets with generated provenance frontmatter; sender identity is derived internally from the caller.
+- Read this plugin's relay-thread index by exact `threadId` using `get_session_thread`.
 
-Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement Better-line items unless the task explicitly asks for them.
+Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement further Better-line items unless the task explicitly asks for them.
 
 ## Setup Commands
 
@@ -19,7 +20,7 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement B
 - Run tests: `pnpm test`
 - Run no-key DSH headless tool E2E: `pnpm test:e2e:no-key`
 
-`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, and `send_session_message` tools through the Host `tools` service.
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, `send_session_message`, and `get_session_thread` tools through the Host `tools` service.
 
 `lib/` is the shipped JavaScript source. TypeScript only validates JS/JSDoc with `noEmit`; do not add a compile/build step.
 
