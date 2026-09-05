@@ -25,6 +25,31 @@ Every relay message includes:
 
 Work-stage delivery rejects archived sessions, self-delivery, and non-ordinary session origins.
 
+## Replying To A Relay
+
+A target agent can reply using only the received frontmatter:
+
+```yaml
+dsh-relay:
+  messageId: "agm-parent"
+  threadId: "agt-thread"
+  fromSessionId: "session-sender"
+```
+
+Call `send_session_message` with this mapping:
+
+```json
+{
+  "sessionId": "session-sender",
+  "threadId": "agt-thread",
+  "inReplyTo": "agm-parent",
+  "message": "Reply body",
+  "summary": "Short reply summary"
+}
+```
+
+Use `summary` as the semantic thread breadcrumb. `get_session_thread` stores and renders receipt metadata plus bounded summaries, not message bodies.
+
 ## Relay Thread Index
 
 `send_session_message` writes a small sidecar index for relay receipts under `${DSH_HOME:-~/.dsh}/session-mesh/threads-v1` by default. The index is organized by exact `threadId` with fixed-size pages, so `get_session_thread` reads only the target thread manifest and the pages needed for the requested latest summaries. The index stores relay metadata and bounded caller-provided `summary` values; it does not copy message bodies or DSH session logs.

@@ -412,7 +412,9 @@ type GetSessionThreadArgs = {
 - 每条 relay message 有 `messageId` 和 `threadId`。
 - 新线程由 `send_session_message` 在未传 `threadId` 时创建。
 - 回复携带同一个 `threadId` 和父级 relay `messageId` 作为 `inReplyTo`。
+- 收到 relay 后的回复映射为：`sessionId = dsh-relay.fromSessionId`、`threadId = dsh-relay.threadId`、`inReplyTo = dsh-relay.messageId`。
 - `expectReply` 进入 relay 摘要 metadata，插件不阻塞等待。
+- `summary` 是 thread index 的语义面包屑；发送方应提供能描述任务或回复意图的短摘要。
 - `get_session_thread` 只读取插件维护的 relay-thread 索引，不扫描 DSH session logs。
 
 验收：
