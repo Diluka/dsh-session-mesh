@@ -102,12 +102,12 @@ declare global {
   interface RelayEnvelopeData {
     transport: 'session.prompt'
     messageId: string
+    threadId: string
     from: SenderIdentity
     to: { sessionId: string }
     mode: SendSessionMode
     sentAt: string
     inReplyTo?: string
-    threadId?: string
   }
 
   interface SendSessionMessageArgs {
@@ -117,15 +117,93 @@ declare global {
     mode?: SendSessionMode
     expectReply?: boolean
     inReplyTo?: string
+    threadId?: string
+  }
+
+  interface RelayThreadMessage {
+    seq: number
+    threadId: string
+    messageId: string
+    sentAt: string
+    from: SenderIdentity
+    to: { sessionId: string }
+    mode: SendSessionMode
+    deliveredVia: DeliveredVia
+    inReplyTo?: string
+    expectReply?: boolean
+    summary?: string
+  }
+
+  interface RelayThreadManifest {
+    version: 1
+    threadId: string
+    pageSize: number
+    messageCount: number
+    createdAt: string
+    updatedAt: string
+    latestSeq: number
+  }
+
+  interface RelayThreadPage {
+    version: 1
+    threadId: string
+    page: number
+    startSeq: number
+    messages: RelayThreadMessage[]
+  }
+
+  interface RelayThreadAppendInput {
+    threadId: string
+    messageId: string
+    sentAt: string
+    from: SenderIdentity
+    to: { sessionId: string }
+    mode: SendSessionMode
+    deliveredVia: DeliveredVia
+    summary?: string
+    inReplyTo?: string
+    expectReply?: boolean
+  }
+
+  interface GetSessionThreadArgs {
+    threadId: string
+    limit?: number
+  }
+
+  interface GetSessionThreadResult {
+    threadId: string
+    messages: RelayThreadMessage[]
+    count: number
+    total: number
+    latestSeq?: number
+  }
+
+  interface RelayThreadStoreLike {
+    append(input: RelayThreadAppendInput): Promise<void>
+    readThread(args: GetSessionThreadArgs): Promise<GetSessionThreadResult>
+  }
+
+  interface RelayThreadStoreOptions {
+    root?: string
+    pageSize?: number
+    maxReadLimit?: number
+  }
+
+  interface SessionMeshRuntimeOptions {
+    threadStore?: RelayThreadStoreLike
+    threadStoreOptions?: RelayThreadStoreOptions
   }
 
   interface SendSessionMessageResult {
     messageId: string
+    threadId: string
     accepted: true
     mode: SendSessionMode
     to: SessionRow
     from: SenderIdentity
     deliveredVia: DeliveredVia
+    threadIndexed: boolean
+    threadIndexError?: string
   }
 
   interface SessionHeaderLike {
