@@ -21,6 +21,11 @@ const overlayPatch = `
     provider: ${e2eProvider}
     model: ${e2eModel}
 - insert:
+    - id: session-mesh-e2e-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: mesh-e2e-initial
+        includeShippedRoot: false
     - id: session-mesh-e2e-probe
       name: ./probe.mjs
 `.trimStart()
@@ -58,8 +63,16 @@ try {
   const probePath = join(temp, 'probe.mjs')
   const patchPath = join(temp, 'patch.yml')
   const dshVersion = run(dsh, ['--version']).trim()
-  assert.match(dshVersion, /^0\.1\.2-rc\.1$/, 'E2E expects DSH 0.1.2-rc.1')
+  const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const expectedVersion = packageJson.devDependencies['@deepseek-ai/dsh-agent']
+  assert.equal(dshVersion, expectedVersion, `E2E expects DSH ${expectedVersion}`)
 
+  for (const preset of ['mesh-e2e-initial', 'mesh-e2e-selected']) {
+    const presetDir = join(dshHome, '.agent-presets', preset)
+    mkdirSync(presetDir, { recursive: true })
+    writeFileSync(join(presetDir, 'agent.cordis.yml'), '[]\n')
+    writeFileSync(join(presetDir, 'preset.yml'), `name: ${preset}\ndescription: Isolated session mesh E2E preset\n`)
+  }
   mkdirSync(packDir, { recursive: true })
   writeFileSync(probePath, readFileSync(probeModulePath, 'utf8'))
   writeFileSync(patchPath, overlayPatch)
@@ -129,6 +142,7 @@ try {
   assert.equal(result.threadCount, 2)
   assert.equal(result.deliveredVia, 'followup')
   assert.equal(result.replyDeliveredVia, 'followup')
+  assert.deepEqual(result.resumedDeliveries, ['resume-followup', 'resume-steer'])
   assert.equal(result.targetStatus, 'idle')
   assert.equal(result.relayFirstLine, '---')
 

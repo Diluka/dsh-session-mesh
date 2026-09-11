@@ -55,7 +55,7 @@ function makeRuntime(records, liveAgents, extras = {}, options = {}) {
     async create(options) {
       const cwd = options.meta?.cwd ?? '/tmp/created'
       const agent = makeAgent(options.sessionId, cwd, 'idle', options.meta?.agentPreset ?? 'cordis')
-      await options.setup?.(agent.ctx)
+      await options.setup?.(agent.ctx, agent)
       liveAgents.set(options.sessionId, agent)
       return { agent }
     },
@@ -63,7 +63,7 @@ function makeRuntime(records, liveAgents, extras = {}, options = {}) {
       const record = records.find((entry) => entry.id === options.resumeSessionId)
       if (record === undefined) throw new Error('missing session')
       const agent = makeAgent(record.id, record.cwd ?? '/tmp/resumed', 'idle', record.agentPreset ?? 'cordis')
-      await options.setup?.(agent.ctx)
+      await options.setup?.(agent.ctx, agent)
       liveAgents.set(record.id, agent)
       return { agent }
     },
@@ -302,6 +302,83 @@ test('sendSessionMessage indexes a two-hop relay thread without reading session 
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
+})
+
+test('resume uses the recorded preset even when the creation preset no longer exists', async () => {
+  const source = makeAgent('session-source', '/tmp/source')
+  const liveAgents = new Map([[source.id, source]])
+  const resolved = []
+  const mounted = []
+  const runtime = makeRuntime([
+    { id: 'session-target', cwd: '/tmp/target', createdAt: 200, agentPreset: 'removed-preset' },
+  ], liveAgents, {
+    sessionProjections: {
+      stateOf(session, key) {
+        assert.equal(session.header.id, 'session-target')
+        assert.equal(key, 'agentPreset')
+        return 'selected-preset'
+      },
+    },
+    agentPresets: {
+      async resolve(id) {
+        resolved.push(id)
+        if (id === 'removed-preset') throw new Error('initial preset was removed')
+        return { id }
+      },
+      async mount(_ctx, id) { mounted.push(id) },
+      composedPreset: () => mounted.at(-1),
+    },
+  }, { threadStore: { async append() {} } })
+
+  const result = await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'resume selected preset' }, source)
+
+  assert.equal(result.deliveredVia, 'resume-followup')
+  assert.deepEqual(resolved, ['selected-preset'])
+  assert.deepEqual(mounted, ['selected-preset'])
+  assert.equal(result.to.agentPreset, 'selected-preset')
+  assert.equal(result.to.self, false)
+  assert.equal(liveAgents.get('session-target').delivered.length, 1)
+})
+
+for (const selected of [null, undefined]) {
+  test(`resume falls back to the creation preset when projection is ${selected}`, async () => {
+    const source = makeAgent('session-source', '/tmp/source')
+    const mounted = []
+    const runtime = makeRuntime([
+      { id: 'session-target', cwd: '/tmp/target', createdAt: 200, agentPreset: 'initial-preset' },
+    ], new Map([[source.id, source]]), {
+      sessionProjections: { stateOf: () => selected },
+      agentPresets: {
+        resolve: async (id) => ({ id }),
+        mount: async (_ctx, id) => { mounted.push(id) },
+      },
+    }, { threadStore: { async append() {} } })
+
+    await runtime.sendSessionMessage({ sessionId: 'session-target', message: 'fallback' }, source)
+    assert.deepEqual(mounted, ['initial-preset'])
+  })
+}
+
+test('resume preset mounting failure rejects delivery without indexing', async () => {
+  const source = makeAgent('session-source', '/tmp/source')
+  const liveAgents = new Map([[source.id, source]])
+  let indexed = false
+  const runtime = makeRuntime([
+    { id: 'session-target', cwd: '/tmp/target', createdAt: 200, agentPreset: 'initial-preset' },
+  ], liveAgents, {
+    sessionProjections: { stateOf: () => 'broken-preset' },
+    agentPresets: {
+      resolve: async (id) => ({ id }),
+      async mount() { throw new Error('preset mount failed') },
+    },
+  }, { threadStore: { async append() { indexed = true } } })
+
+  await assert.rejects(
+    runtime.sendSessionMessage({ sessionId: 'session-target', message: 'must not deliver' }, source),
+    (error) => error instanceof SessionMeshError && error.code === 'resume-failed' && /preset mount failed/.test(error.message),
+  )
+  assert.equal(liveAgents.has('session-target'), false)
+  assert.equal(indexed, false)
 })
 
 test('sendSessionMessage reports index failure after successful delivery', async () => {

@@ -278,6 +278,10 @@ declare global {
     currentSelection(): { provider: string; model: string }
   }
 
+  interface SessionProjectionsLike {
+    stateOf(session: DshAgent['session'], key: 'agentPreset'): string | null | undefined
+  }
+
   interface SessionTitleLike {
     rename(session: DshAgent['session'], title: string): { title: string }
   }
