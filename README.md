@@ -66,6 +66,10 @@ pnpm issue:feedback -- --kind friction --tool get_session_thread --title "Short 
 
 Use `--dry-run` first when checking formatting. The script uses `gh issue create`, detects the GitHub repo from `origin`, and adds metadata fields for `tool`, `sessionId`, `threadId`, and `messageId` when provided.
 
+## Compatibility
+
+The current release targets DSH `0.1.5-rc.1` (npm `latest` at adaptation time). DSH development dependencies and the CI CLI are pinned to this version; `next` releases are not the compatibility baseline. Stopped-session delivery restores the latest recorded preset from the Session projection rather than only the creation header. Lightweight stopped-session list rows still report the initial header preset; after resume, live rows and delivery receipts report the mounted preset.
+
 ## Development
 
 Install dependencies:
@@ -82,7 +86,7 @@ pnpm test
 pnpm test:e2e:no-key
 ```
 
-`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; the GitHub Actions workflow installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, `send_session_message`, and `get_session_thread` tools through the Host `tools` service.
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; the GitHub Actions workflow installs `@deepseek-ai/dsh@0.1.5-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, `send_session_message`, and `get_session_thread` tools through the Host `tools` service. It also loads the real preset service with isolated empty presets and verifies stopped-session `queue`/`steer` delivery, including restoration after a blank-session preset switch.
 
 The plugin ships source directly from `lib/**/*.js`. TypeScript is used only for `checkJs`/JSDoc validation with `noEmit`; there is no build step or generated `lib/` output.
 

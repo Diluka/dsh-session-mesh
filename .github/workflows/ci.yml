@@ -63,7 +63,7 @@ jobs:
         run: pnpm pack --pack-destination tmp/pack
 
       - name: Install DSH CLI for no-key E2E
-        run: npm install --global @deepseek-ai/dsh@0.1.2-rc.1
+        run: npm install --global @deepseek-ai/dsh@0.1.5-rc.1
 
       - name: Run no-key DSH headless tool E2E
         run: pnpm test:e2e:no-key

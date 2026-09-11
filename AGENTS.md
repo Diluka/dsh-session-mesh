@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.2-rc.1`, Node `>=22`, pnpm, JavaScript with JSDoc checked by TypeScript, and Cordis Host services.
+`dsh-session-mesh` is a DSH Host plugin for ordinary durable session discovery, creation, and sessionId-addressed agent relay messaging. It targets DSH `0.1.5-rc.1`, Node `>=22`, pnpm, JavaScript with JSDoc checked by TypeScript, and Cordis Host services.
 
 The current implemented scope is the Work line plus the minimal B2 relay-thread index:
 
@@ -20,7 +20,7 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement f
 - Run tests: `pnpm test`
 - Run no-key DSH headless tool E2E: `pnpm test:e2e:no-key`
 
-`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.2-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, `send_session_message`, and `get_session_thread` tools through the Host `tools` service.
+`pnpm test:e2e:no-key` expects a `dsh` CLI on `PATH`; CI installs `@deepseek-ai/dsh@0.1.5-rc.1` for this step. It packs the plugin, installs the tarball into a temporary headless profile, starts DSH with a fake LLM adapter, and executes the real `list_sessions`, `create_session`, `send_session_message`, and `get_session_thread` tools through the Host `tools` service. It also loads the real preset service with isolated empty presets and verifies stopped-session `queue`/`steer` delivery, including restoration after a blank-session preset switch.
 
 `lib/` is the shipped JavaScript source. TypeScript only validates JS/JSDoc with `noEmit`; do not add a compile/build step.
 
@@ -39,6 +39,7 @@ Use `SESSION_MESH_DESIGN.md` as the product/design authority. Do not implement f
 - This is a Host plugin only. Add Client UI only for an explicitly requested Better-line task.
 - Prefer `ctx.get('serviceName')` for optional DSH services and handle absence with clear errors.
 - Use `ctx.agents.create` for ordinary session creation and `ctx.agents.resume` for stopped-session delivery.
+- Resolve a resumed session's preset inside `setup(agentCtx, agent)` from `sessionProjections.stateOf(agent.session, 'agentPreset')`; the header only records the initial preset. Fall back to the header if the projection is unavailable.
 - Use `sessionQuery` and `workspaceRegistry` as the session/workspace source of truth. Do not create a second session database.
 - Sender identity must come from the caller `ToolRunContext.agent`; tool args must not accept `fromSessionId`, `sender`, `source`, or equivalent fields.
 - Relay text must keep the generated `dsh-relay` envelope visible to the receiving model.

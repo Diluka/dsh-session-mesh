@@ -1,5 +1,5 @@
 export const name = 'dsh-session-mesh-e2e-probe'
-export const inject = ['llm', 'tools', 'agents', 'agentLoop', 'appExit']
+export const inject = ['llm', 'tools', 'agents', 'agentLoop', 'appExit', 'agentPresets']
 
 const provider = 'dsh-session-mesh-e2e'
 const model = 'fake-model'
@@ -81,8 +81,9 @@ async function run(ctx) {
   const cwd = process.cwd()
   const sender = await ctx.agents.create({
     sessionId: senderSessionId,
-    meta: { cwd },
+    meta: { cwd, agentPreset: 'mesh-e2e-initial' },
     agentOptions: { provider, model },
+    setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, 'mesh-e2e-initial') },
   })
   try {
     const call = (name, args, agent) => ctx.tools.execute({
@@ -175,7 +176,47 @@ async function run(ctx) {
       fail('get_session_thread did not preserve reply metadata: ' + JSON.stringify(thread))
     }
 
+    const resumedDeliveries = []
+    for (const mode of ['queue', 'steer']) {
+      const sessionId = senderSessionId + '-stopped-' + mode
+      const stopped = await ctx.agents.create({
+        sessionId,
+        meta: { cwd, agentPreset: created.agentPreset },
+        agentOptions: { provider, model },
+        setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, created.agentPreset) },
+      })
+      if (mode === 'steer') {
+        await ctx.agentPresets.select(stopped.agent, 'mesh-e2e-selected')
+        if (stopped.agent.session.header.agentPreset !== created.agentPreset) fail('preset selection mutated the creation header')
+      }
+      const expectedPreset = mode === 'steer' ? 'mesh-e2e-selected' : created.agentPreset
+      await stopped.dispose()
+      if (ctx.agents.get(sessionId)) fail('disposed agent is still registered: ' + sessionId)
+      const stoppedRows = assertToolResult('list stopped session', await call(
+        'list_sessions', { sessions: { ids: [sessionId], statuses: ['stopped'] } }, sender.agent,
+      ))
+      if (stoppedRows.items?.[0]?.agentPreset !== created.agentPreset) fail('stopped session preset was not persisted')
+      const resumed = assertToolResult('resume ' + mode, await call('send_session_message', {
+        sessionId,
+        message: 'E2E stopped session ' + mode,
+        mode,
+      }, sender.agent))
+      const expected = mode === 'queue' ? 'resume-followup' : 'resume-steer'
+      if (resumed.deliveredVia !== expected || resumed.threadIndexed !== true) fail('stopped delivery failed: ' + JSON.stringify(resumed))
+      if (resumed.to?.agentPreset !== expectedPreset) fail('receipt reports a stale preset')
+      const resumedAgent = ctx.agents.get(sessionId)
+      if (!resumedAgent) fail('resumed agent is not registered')
+      await resumedAgent.whenIdle()
+      if (!firstRelayText(resumedAgent)?.endsWith('E2E stopped session ' + mode)) fail('resumed relay body missing')
+      const resumedRows = assertToolResult('list resumed session', await call(
+        'list_sessions', { sessions: { ids: [sessionId], statuses: ['idle'] } }, sender.agent,
+      ))
+      if (resumedRows.items?.[0]?.agentPreset !== expectedPreset) fail('resumed session did not restore the selected preset')
+      resumedDeliveries.push(resumed.deliveredVia)
+    }
+
     return {
+      resumedDeliveries,
       toolSchemas: schemas.filter((name) => meshToolNames.includes(name)),
       createdSessionId: created.sessionId,
       threadId: sent.threadId,
